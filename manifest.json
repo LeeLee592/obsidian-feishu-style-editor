@@ -1,0 +1,10 @@
+{
+	"id": "feishu-style-editor",
+	"name": "Feishu Style Editor",
+	"version": "0.1.0",
+	"minAppVersion": "1.13.0",
+	"description": "Feishu-style document editing: slash commands, floating toolbar, and line block handles.",
+	"author": "LeeLee",
+	"authorUrl": "https://github.com/LeeLee592",
+	"isDesktopOnly": false
+}

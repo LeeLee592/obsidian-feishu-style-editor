@@ -1,0 +1,133 @@
+/* Feishu Style Editor */
+
+.fse-popup {
+	position: fixed;
+	z-index: var(--layer-menu);
+	min-width: 220px;
+	max-width: 320px;
+	max-height: 320px;
+	overflow-y: auto;
+	padding: var(--size-4-1);
+	background: var(--background-primary);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-m);
+	box-shadow: var(--shadow-s);
+}
+
+.fse-popup-list {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+}
+
+.fse-popup-item {
+	margin: 0;
+	padding: 0;
+}
+
+.fse-popup-item-button {
+	display: flex;
+	align-items: center;
+	gap: var(--size-4-2);
+	width: 100%;
+	min-height: 36px;
+	padding: var(--size-4-1) var(--size-4-2);
+	border: none;
+	border-radius: var(--radius-s);
+	background: transparent;
+	color: var(--text-normal);
+	cursor: pointer;
+	text-align: left;
+}
+
+.fse-popup-item-button:hover,
+.fse-popup-item-button.is-active {
+	background: var(--background-modifier-hover);
+}
+
+.fse-popup-item-button:focus-visible {
+	box-shadow: inset 0 0 0 2px var(--interactive-accent);
+	outline: none;
+}
+
+.fse-popup-item-icon {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	flex-shrink: 0;
+	color: var(--text-muted);
+}
+
+.fse-popup-item-icon svg {
+	width: 16px;
+	height: 16px;
+}
+
+.fse-popup-item-label {
+	font-size: var(--font-ui-small);
+	font-weight: var(--font-medium);
+}
+
+.fse-popup-item-desc {
+	margin-left: auto;
+	padding-left: var(--size-4-2);
+	font-size: var(--font-ui-smaller);
+	color: var(--text-faint);
+	white-space: nowrap;
+}
+
+/* Horizontal formatting toolbar (bubble menu) */
+.fse-popup-toolbar {
+	min-width: 0;
+	max-width: none;
+	padding: var(--size-4-1);
+}
+
+.fse-popup-toolbar .fse-popup-list {
+	display: flex;
+	gap: var(--size-4-1);
+}
+
+.fse-popup-toolbar .fse-popup-item-button {
+	position: relative;
+	justify-content: center;
+	width: 32px;
+	height: 32px;
+	min-height: 0;
+	padding: 0;
+}
+
+/* Extend the touch target without enlarging the visual button */
+.fse-popup-toolbar .fse-popup-item-button::after,
+.fse-block-handle::after {
+	content: '';
+	position: absolute;
+	inset: -6px;
+}
+
+/* Block handle ("+" before the active line) */
+.fse-block-handle {
+	position: fixed;
+	z-index: var(--layer-menu);
+	width: 24px;
+	height: 24px;
+	padding: 0;
+	border: none;
+	border-radius: var(--radius-s);
+	background: var(--background-secondary);
+	color: var(--text-muted);
+	font-size: 18px;
+	line-height: 1;
+	cursor: pointer;
+	box-shadow: var(--shadow-s);
+}
+
+.fse-block-handle:hover {
+	background: var(--background-modifier-hover);
+	color: var(--text-normal);
+}
+
+.fse-block-handle:focus-visible {
+	box-shadow: 0 0 0 2px var(--interactive-accent);
+	outline: none;
+}
