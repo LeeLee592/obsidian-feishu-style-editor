@@ -102,24 +102,26 @@
 .fse-block-handle::after {
 	content: '';
 	position: absolute;
-	inset: -6px;
+	inset: -9px;
 }
 
 /* Block handle ("+" before the active line) */
 .fse-block-handle {
 	position: fixed;
 	z-index: var(--layer-menu);
-	width: 24px;
-	height: 24px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 26px;
+	height: 26px;
 	padding: 0;
 	border: none;
 	border-radius: var(--radius-s);
-	background: var(--background-secondary);
-	color: var(--text-muted);
+	background: transparent;
+	color: var(--text-faint);
 	font-size: 18px;
 	line-height: 1;
 	cursor: pointer;
-	box-shadow: var(--shadow-s);
 }
 
 .fse-block-handle:hover {

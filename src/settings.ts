@@ -13,6 +13,8 @@ export const DEFAULT_SETTINGS: FeishuStyleEditorSettings = {
 	bubbleToolbar: true,
 };
 
+type BooleanSettingKey = 'slashCommands' | 'blockHandle' | 'bubbleToolbar';
+
 export class FeishuStyleEditorSettingTab extends PluginSettingTab {
 	plugin: FeishuStyleEditor;
 
@@ -25,13 +27,13 @@ export class FeishuStyleEditorSettingTab extends PluginSettingTab {
 		return [
 			{
 				name: 'Slash commands',
-				desc: 'Type "/" to open a menu of blocks to insert.',
+				desc: 'Type "/" at the start of a line or after a space to insert blocks.',
 				aliases: ['slash', 'menu', 'blocks'],
 				control: { type: 'toggle', key: 'slashCommands' },
 			},
 			{
 				name: 'Block handle',
-				desc: 'Show a "+" handle next to the current line to insert or transform blocks.',
+				desc: 'Show a "+" handle next to the current line to insert or convert blocks.',
 				aliases: ['plus', 'add block'],
 				control: { type: 'toggle', key: 'blockHandle' },
 			},
@@ -42,5 +44,16 @@ export class FeishuStyleEditorSettingTab extends PluginSettingTab {
 				control: { type: 'toggle', key: 'bubbleToolbar' },
 			},
 		];
+	}
+
+	getControlValue(key: string): unknown {
+		return this.plugin.settings[key as BooleanSettingKey];
+	}
+
+	async setControlValue(key: string, value: unknown): Promise<void> {
+		const patch: Partial<Record<BooleanSettingKey, boolean>> = {
+			[key as BooleanSettingKey]: value === true,
+		};
+		await this.plugin.updateSettings(patch);
 	}
 }

@@ -23,3 +23,6 @@ data.json
 
 # Local test vault
 Test/
+
+# DSH vault binding for this machine
+dsh.obsidian.json

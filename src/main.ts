@@ -7,7 +7,7 @@ import {
 } from './settings';
 
 export default class FeishuStyleEditor extends Plugin {
-	settings!: FeishuStyleEditorSettings;
+	settings: FeishuStyleEditorSettings = { ...DEFAULT_SETTINGS };
 
 	async onload() {
 		await this.loadSettings();
@@ -18,9 +18,12 @@ export default class FeishuStyleEditor extends Plugin {
 	}
 
 	async loadSettings() {
-		const data = (await this.loadData()) as
-			| Partial<FeishuStyleEditorSettings>
-			| null;
+		const data = (await this.loadData()) as Partial<FeishuStyleEditorSettings> | null;
 		this.settings = { ...DEFAULT_SETTINGS, ...(data ?? {}) };
+	}
+
+	async updateSettings(patch: Partial<FeishuStyleEditorSettings>) {
+		this.settings = { ...this.settings, ...patch };
+		await this.saveData(this.settings);
 	}
 }
