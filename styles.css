@@ -1,17 +1,29 @@
-/* Feishu Style Editor */
+/* Feishu Style Editor
+ *
+ * Visual language borrowed from Feishu's editor:
+ *   - a block palette with a compact icon grid for basic blocks and
+ *     descriptive rows for the rest, under quiet section headings;
+ *   - a segmented floating toolbar: block converter | alignment-free
+ *     formatting | inline marks, separated by hairlines.
+ * Everything derives from Obsidian's theme variables so it follows the
+ * user's light/dark theme and accent colour.
+ */
+
+/* ---------- block palette / menu shell ---------- */
 
 .fse-popup {
 	position: fixed;
 	z-index: var(--layer-menu);
-	min-width: 220px;
-	max-width: 320px;
-	max-height: 320px;
+	min-width: 232px;
+	max-width: 324px;
+	max-height: 340px;
 	overflow-y: auto;
-	padding: var(--size-4-1);
+	overscroll-behavior: contain;
+	padding: var(--size-4-2) var(--size-4-1) var(--size-4-1);
 	background: var(--background-primary);
 	border: 1px solid var(--background-modifier-border);
-	border-radius: var(--radius-m);
-	box-shadow: var(--shadow-s);
+	border-radius: var(--radius-l);
+	box-shadow: var(--shadow-l);
 }
 
 .fse-popup-list {
@@ -20,9 +32,36 @@
 	padding: 0;
 }
 
+.fse-popup-section + .fse-popup-section {
+	margin-top: var(--size-4-2);
+}
+
+.fse-popup-section-title {
+	padding: var(--size-4-1) var(--size-4-2) var(--size-2-1);
+	color: var(--text-faint);
+	font-size: var(--font-ui-smaller);
+	font-weight: var(--font-medium);
+	letter-spacing: 0.02em;
+}
+
+.fse-popup-group {
+	display: grid;
+	gap: 2px;
+}
+
+/* Feishu's basic palette: two columns of compact icon tiles. */
+.fse-popup-group-grid {
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.fse-popup-group-list {
+	grid-template-columns: minmax(0, 1fr);
+}
+
 .fse-popup-item {
 	margin: 0;
 	padding: 0;
+	min-width: 0;
 }
 
 .fse-popup-item-button {
@@ -31,13 +70,18 @@
 	gap: var(--size-4-2);
 	width: 100%;
 	min-height: 36px;
-	padding: var(--size-4-1) var(--size-4-2);
+	padding: var(--size-2-2) var(--size-4-2);
 	border: none;
 	border-radius: var(--radius-s);
 	background: transparent;
 	color: var(--text-normal);
 	cursor: pointer;
 	text-align: left;
+	min-width: 0;
+}
+
+.fse-popup-item-button.is-tile {
+	min-height: 34px;
 }
 
 .fse-popup-item-button:hover,
@@ -50,62 +94,160 @@
 	outline: none;
 }
 
-.fse-popup-item-icon {
-	display: inline-flex;
-	align-items: center;
-	justify-content: center;
-	flex-shrink: 0;
-	color: var(--text-muted);
-}
-
-.fse-popup-item-icon svg {
-	width: 16px;
-	height: 16px;
+.fse-popup-item-body {
+	display: flex;
+	flex-direction: column;
+	min-width: 0;
+	flex: 1;
 }
 
 .fse-popup-item-label {
 	font-size: var(--font-ui-small);
-	font-weight: var(--font-medium);
-}
-
-.fse-popup-item-desc {
-	margin-left: auto;
-	padding-left: var(--size-4-2);
-	font-size: var(--font-ui-smaller);
-	color: var(--text-faint);
+	font-weight: var(--font-normal);
+	overflow: hidden;
+	text-overflow: ellipsis;
 	white-space: nowrap;
 }
 
-/* Horizontal formatting toolbar (bubble menu) */
+.fse-popup-item-desc {
+	font-size: var(--font-ui-smaller);
+	color: var(--text-faint);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.fse-popup-item-shortcut {
+	margin-left: auto;
+	padding-left: var(--size-4-2);
+	color: var(--text-faint);
+	font-size: var(--font-ui-smaller);
+	font-variant-numeric: tabular-nums;
+}
+
+.fse-popup-item-chevron {
+	display: flex;
+	align-items: center;
+	color: var(--text-faint);
+	flex-shrink: 0;
+}
+
+.fse-popup-item-chevron svg {
+	width: 14px;
+	height: 14px;
+}
+
+/* ---------- coloured icon tiles ---------- */
+
+.fse-popup-item-tile {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	flex-shrink: 0;
+	width: 22px;
+	height: 22px;
+	border-radius: var(--radius-s);
+	color: var(--text-muted);
+}
+
+.fse-popup-item-tile svg {
+	width: 16px;
+	height: 16px;
+}
+
+.fse-popup-item-tile[data-accent='blue'] {
+	color: #3370ff;
+}
+
+.fse-popup-item-tile[data-accent='purple'] {
+	color: #7f3bf5;
+}
+
+.fse-popup-item-tile[data-accent='green'] {
+	color: #34c724;
+}
+
+.fse-popup-item-tile[data-accent='orange'] {
+	color: #ff8800;
+}
+
+.fse-popup-item-tile[data-accent='red'] {
+	color: #f54a45;
+}
+
+.fse-popup-item-tile[data-accent='yellow'] {
+	color: #e8a600;
+}
+
+.fse-popup-item-tile[data-accent='cyan'] {
+	color: #14c0d8;
+}
+
+/* ---------- segmented floating toolbar ---------- */
+
 .fse-popup-toolbar {
+	display: flex;
+	align-items: center;
 	min-width: 0;
 	max-width: none;
-	padding: var(--size-4-1);
+	max-height: none;
+	padding: var(--size-2-2);
+	border-radius: var(--radius-l);
+	overflow: visible;
 }
 
 .fse-popup-toolbar .fse-popup-list {
 	display: flex;
-	gap: var(--size-4-1);
+	align-items: center;
+	gap: var(--size-2-1);
+}
+
+.fse-popup-toolbar .fse-popup-group-row {
+	display: flex;
+	align-items: center;
+	gap: var(--size-2-1);
+}
+
+/* Hairline between toolbar segments, as in Feishu. */
+.fse-popup-toolbar .fse-popup-group-row[data-divider] {
+	margin-left: var(--size-2-2);
+	padding-left: var(--size-2-2);
+	border-left: 1px solid var(--background-modifier-border);
+}
+
+.fse-popup-toolbar .fse-popup-item {
+	flex: 0 0 auto;
 }
 
 .fse-popup-toolbar .fse-popup-item-button {
-	position: relative;
 	justify-content: center;
-	width: 32px;
-	height: 32px;
+	width: 30px;
+	height: 30px;
 	min-height: 0;
 	padding: 0;
+	border-radius: var(--radius-s);
+	color: var(--text-muted);
 }
 
-/* Extend the touch target without enlarging the visual button */
-.fse-popup-toolbar .fse-popup-item-button::after,
-.fse-block-handle::after {
-	content: '';
-	position: absolute;
-	inset: -9px;
+.fse-popup-toolbar .fse-popup-item-button:hover,
+.fse-popup-toolbar .fse-popup-item-button.is-active {
+	color: var(--text-normal);
+	background: var(--background-modifier-hover);
 }
 
-/* Block handle ("+" before the active line) */
+.fse-popup-toolbar .fse-popup-item-tile {
+	width: auto;
+	height: auto;
+	color: inherit;
+}
+
+.fse-popup-toolbar .fse-popup-item-tile svg {
+	width: 17px;
+	height: 17px;
+}
+
+/* ---------- block handle ---------- */
+
 .fse-block-handle {
 	position: fixed;
 	z-index: var(--layer-menu);
@@ -122,6 +264,13 @@
 	font-size: 18px;
 	line-height: 1;
 	cursor: pointer;
+}
+
+/* Extend the touch target without enlarging the visual button. */
+.fse-block-handle::after {
+	content: '';
+	position: absolute;
+	inset: -9px;
 }
 
 .fse-block-handle:hover {

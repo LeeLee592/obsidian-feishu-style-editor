@@ -2,12 +2,46 @@ import { setIcon } from 'obsidian';
 
 export type PopupMode = 'list' | 'toolbar';
 
+/** A coloured icon tile, the way Feishu's menus distinguish block kinds. */
+export type PopupAccent =
+	| 'blue'
+	| 'purple'
+	| 'green'
+	| 'orange'
+	| 'red'
+	| 'yellow'
+	| 'cyan'
+	| 'plain';
+
 export interface PopupItem {
 	id: string;
 	label: string;
 	icon: string;
 	description?: string;
+	/** Optional keyboard hint shown on the right, e.g. "⌘B". */
+	shortcut?: string;
+	/** Trailing affordance for entries that open a further choice. */
+	hasSubmenu?: boolean;
+	accent?: PopupAccent;
 	onSelect: () => void;
+}
+
+export type PopupLayout = 'grid' | 'list';
+
+export interface PopupSection {
+	/** Omitted for a section without a heading. */
+	title?: string;
+	items: PopupItem[];
+	/**
+	 * `grid` renders compact two-column icon tiles, the way Feishu's basic
+	 * block palette does; `list` renders icon + label + description rows.
+	 */
+	layout?: PopupLayout;
+	/**
+	 * Draws a hairline before this group. Only meaningful in `toolbar` mode,
+	 * where Feishu separates its segments the same way.
+	 */
+	divider?: boolean;
 }
 
 /**
@@ -64,8 +98,11 @@ export class Popup {
 		return this.visible;
 	}
 
-	setContent(items: PopupItem[], mode: PopupMode = 'list'): void {
-		this.items = items;
+	setContent(
+		sections: PopupSection[],
+		mode: PopupMode = 'list',
+	): void {
+		this.items = sections.flatMap((section) => section.items);
 		this.selected = 0;
 		this.mode = mode;
 		this.listEl.empty();
@@ -75,8 +112,42 @@ export class Popup {
 			'aria-label',
 			mode === 'toolbar' ? 'Formatting' : 'Block menu',
 		);
-		for (const item of items) {
-			this.renderItem(item, mode);
+		for (const section of sections) {
+			if (section.items.length === 0) {
+				continue;
+			}
+			if (mode === 'toolbar') {
+				const group = this.listEl.createDiv({
+					cls: 'fse-popup-group fse-popup-group-row',
+				});
+				if (section.divider) {
+					group.setAttr('data-divider', 'true');
+				}
+				for (const item of section.items) {
+					this.renderItem(item, mode, group, 'list');
+				}
+				continue;
+			}
+			const layout = section.layout ?? 'list';
+			const group = section.title
+				? this.listEl.createEl('section', { cls: 'fse-popup-section' })
+				: this.listEl;
+			group.createDiv({
+				cls: `fse-popup-group fse-popup-group-${layout}`,
+			});
+			const list = group.lastElementChild as HTMLElement;
+			if (section.title) {
+				group.insertBefore(
+					group.createDiv({
+						cls: 'fse-popup-section-title',
+						text: section.title,
+					}),
+					list,
+				);
+			}
+			for (const item of section.items) {
+				this.renderItem(item, mode, list, layout);
+			}
 		}
 		this.updateActive();
 	}
@@ -116,23 +187,39 @@ export class Popup {
 	 * Place the menu in viewport coordinates, flipping above the anchor when
 	 * `above` is set (used by the selection toolbar).
 	 */
-	positionAt(x: number, y: number, above = false): void {
+	positionAt(x: number, y: number, above = false, gap = 8): void {
 		const rect = this.el.getBoundingClientRect();
 		const win = this.el.win;
+		const margin = 8;
+		const height = rect.height;
+		const width = rect.width;
+
 		let left = x;
-		let top = above ? y - rect.height - 8 : y;
-		if (left + rect.width > win.innerWidth - 8) {
-			left = win.innerWidth - rect.width - 8;
+		if (left + width > win.innerWidth - margin) {
+			left = win.innerWidth - width - margin;
 		}
-		if (left < 8) {
-			left = 8;
+		if (left < margin) {
+			left = margin;
 		}
-		if (top + rect.height > win.innerHeight - 8) {
-			top = above ? Math.max(8, y + 8) : win.innerHeight - rect.height - 8;
+
+		let top: number;
+		if (above) {
+			top = y - height - gap;
+			// Not enough room above: drop below the anchor instead of jumping
+			// to the top of the window.
+			if (top < margin) {
+				top = y + gap;
+			}
+		} else {
+			top = y;
 		}
-		if (top < 8) {
-			top = 8;
+		if (top + height > win.innerHeight - margin) {
+			top = Math.max(margin, win.innerHeight - height - margin);
 		}
+		if (top < margin) {
+			top = margin;
+		}
+
 		this.el.style.left = `${left}px`;
 		this.el.style.top = `${top}px`;
 	}
@@ -157,17 +244,28 @@ export class Popup {
 		this.el.remove();
 	}
 
-	private renderItem(item: PopupItem, mode: PopupMode): void {
-		const li = this.listEl.createEl('li', { cls: 'fse-popup-item' });
+	private renderItem(
+		item: PopupItem,
+		mode: PopupMode,
+		parent: HTMLElement,
+		layout: PopupLayout = 'list',
+	): void {
+		const li = parent.createEl('li', { cls: 'fse-popup-item' });
+		const attr: Record<string, string> = { type: 'button' };
+		if (mode === 'toolbar') {
+			attr['aria-label'] = item.label;
+			attr.title = item.label;
+		}
 		const button = li.createEl('button', {
 			cls: 'fse-popup-item-button',
-			attr:
-				mode === 'toolbar'
-					? { type: 'button', 'aria-label': item.label, title: item.label }
-					: { type: 'button' },
+			attr,
 		});
-		const iconEl = button.createSpan({ cls: 'fse-popup-item-icon' });
-		setIcon(iconEl, item.icon);
+
+		const tile = button.createSpan({
+			cls: 'fse-popup-item-tile',
+			attr: { 'data-accent': item.accent ?? 'plain' },
+		});
+		setIcon(tile, item.icon);
 
 		if (mode === 'toolbar') {
 			this.bindSelection(button, item);
@@ -175,11 +273,25 @@ export class Popup {
 		}
 
 		li.setAttr('role', 'option');
-		const labelEl = button.createSpan({ cls: 'fse-popup-item-label' });
-		labelEl.setText(item.label);
-		if (item.description) {
-			const descEl = button.createSpan({ cls: 'fse-popup-item-desc' });
+		button.toggleClass('is-tile', layout === 'grid');
+		const body = button.createSpan({ cls: 'fse-popup-item-body' });
+		const title = body.createSpan({ cls: 'fse-popup-item-label' });
+		title.setText(item.label);
+		if (item.description && layout === 'list') {
+			const descEl = body.createSpan({ cls: 'fse-popup-item-desc' });
 			descEl.setText(item.description);
+		}
+		if (item.shortcut) {
+			button.createSpan({
+				cls: 'fse-popup-item-shortcut',
+				text: item.shortcut,
+			});
+		}
+		if (item.hasSubmenu) {
+			const chevron = button.createSpan({
+				cls: 'fse-popup-item-chevron',
+			});
+			setIcon(chevron, 'chevron-right');
 		}
 		this.bindSelection(button, item);
 	}

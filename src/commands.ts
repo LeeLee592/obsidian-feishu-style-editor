@@ -1,5 +1,6 @@
 import { EditorSelection } from '@codemirror/state';
 import type { EditorView } from '@codemirror/view';
+import type { PopupAccent } from './popup';
 
 /** A block template: the marker line to write plus where to put the caret. */
 export interface BuiltBlock {
@@ -17,133 +18,293 @@ export interface BlockCommand {
 	prefix?: string;
 	/** True for the divider, which replaces the line instead of carrying text. */
 	standalone?: boolean;
+	/** Icon tile colour, matching Feishu's palette per block kind. */
+	accent?: PopupAccent;
+	/** Keyboard hint surfaced in the menu. */
+	shortcut?: string;
+	/** True when the entry opens a second level instead of applying directly. */
+	hasSubmenu?: boolean;
+	/** Marker detected when the caret already sits in this kind of block. */
+	detect?: (text: string) => boolean;
 	build: () => BuiltBlock;
+}
+
+export interface BlockSection {
+	title: string;
+	commands: BlockCommand[];
+	/** Compact icon grid (Feishu's basic palette) or descriptive rows. */
+	layout: 'grid' | 'list';
 }
 
 export interface InlineAction {
 	id: string;
 	label: string;
 	icon: string;
+	shortcut?: string;
 	run: (view: EditorView, from: number, to: number) => void;
 }
 
-export const BLOCK_COMMANDS: BlockCommand[] = [
+const BLOCK_SECTIONS: BlockSection[] = [
 	{
-		id: 'text',
-		label: 'Text',
-		icon: 'type',
-		keywords: ['text', 'paragraph', 'body', 'plain'],
-		description: 'Plain paragraph',
-		build: () => ({ text: '', cursor: 0 }),
+		title: 'Basic',
+		layout: 'grid',
+		commands: [
+			{
+				id: 'text',
+				label: 'Text',
+				icon: 'type',
+				accent: 'plain',
+				keywords: ['text', 'paragraph', 'body', 'plain'],
+				description: 'Plain paragraph',
+				build: () => ({ text: '', cursor: 0 }),
+			},
+			{
+				id: 'heading-1',
+				label: 'Heading 1',
+				icon: 'heading-1',
+				accent: 'blue',
+				keywords: ['h1', 'heading', 'title'],
+				description: 'Large section heading',
+				prefix: '# ',
+				shortcut: '#',
+				build: () => ({ text: '# ', cursor: 2 }),
+			},
+			{
+				id: 'heading-2',
+				label: 'Heading 2',
+				icon: 'heading-2',
+				accent: 'blue',
+				keywords: ['h2', 'heading'],
+				description: 'Medium section heading',
+				prefix: '## ',
+				shortcut: '##',
+				build: () => ({ text: '## ', cursor: 3 }),
+			},
+			{
+				id: 'heading-3',
+				label: 'Heading 3',
+				icon: 'heading-3',
+				accent: 'blue',
+				keywords: ['h3', 'heading'],
+				description: 'Small section heading',
+				prefix: '### ',
+				shortcut: '###',
+				build: () => ({ text: '### ', cursor: 4 }),
+			},
+			{
+				id: 'numbered-list',
+				label: 'Numbered list',
+				icon: 'list-ordered',
+				accent: 'purple',
+				keywords: ['number', 'list', 'ol', 'ordered'],
+				description: 'Ordered list',
+				prefix: '1. ',
+				build: () => ({ text: '1. ', cursor: 3 }),
+			},
+			{
+				id: 'bullet-list',
+				label: 'Bulleted list',
+				icon: 'list',
+				accent: 'purple',
+				keywords: ['bullet', 'list', 'ul'],
+				description: 'Bulleted list',
+				prefix: '- ',
+				shortcut: '-',
+				build: () => ({ text: '- ', cursor: 2 }),
+			},
+			{
+				id: 'task-list',
+				label: 'Task list',
+				icon: 'list-checks',
+				accent: 'purple',
+				keywords: ['task', 'todo', 'checklist'],
+				description: 'Checkable to-do list',
+				prefix: '- [ ] ',
+				build: () => ({ text: '- [ ] ', cursor: 6 }),
+			},
+			{
+				id: 'quote',
+				label: 'Quote',
+				icon: 'quote',
+				accent: 'plain',
+				keywords: ['quote', 'blockquote'],
+				description: 'Quoted block',
+				prefix: '> ',
+				shortcut: '>',
+				build: () => ({ text: '> ', cursor: 2 }),
+			},
+		],
 	},
 	{
-		id: 'heading-1',
-		label: 'Heading 1',
-		icon: 'heading-1',
-		keywords: ['h1', 'heading', 'title'],
-		description: 'Large section heading',
-		prefix: '# ',
-		build: () => ({ text: '# ', cursor: 2 }),
+		title: 'Common',
+		layout: 'list',
+		commands: [
+			{
+				id: 'callout',
+				label: 'Callout',
+				icon: 'megaphone',
+				accent: 'orange',
+				keywords: ['callout', 'note', 'info', 'warning', 'tip', 'admonition'],
+				description: 'Highlighted callout box',
+				prefix: '> [!note] ',
+				hasSubmenu: true,
+				build: () => ({ text: '> [!note] ', cursor: 10 }),
+			},
+			{
+				id: 'table',
+				label: 'Table',
+				icon: 'table',
+				accent: 'green',
+				keywords: ['table', 'grid', 'sheet'],
+				description: '3 × 3 table',
+				build: () => ({
+					text: '|  |  |  |\n| --- | --- | --- |\n|  |  |  |',
+					cursor: 2,
+				}),
+			},
+			{
+				id: 'image',
+				label: 'Image',
+				icon: 'image',
+				accent: 'yellow',
+				keywords: ['image', 'picture', 'photo', 'media'],
+				description: 'Embed an image',
+				build: () => ({ text: '![](url)', cursor: 2 }),
+			},
+			{
+				id: 'file',
+				label: 'Video or file',
+				icon: 'paperclip',
+				accent: 'cyan',
+				keywords: ['file', 'video', 'attach', 'media', 'embed'],
+				description: 'Embed a file or video',
+				build: () => ({ text: '![[file]]', cursor: 3 }),
+			},
+			{
+				id: 'math-block',
+				label: 'Formula',
+				icon: 'sigma',
+				accent: 'purple',
+				keywords: ['math', 'latex', 'formula', 'tex', 'equation'],
+				description: 'Displayed formula',
+				build: () => ({ text: '$$\n\n$$', cursor: 3 }),
+			},
+			{
+				id: 'internal-link',
+				label: 'Link to note',
+				icon: 'link',
+				accent: 'blue',
+				keywords: ['link', 'wiki', 'reference', 'note'],
+				description: 'Link another note',
+				build: () => ({ text: '[[]]', cursor: 2 }),
+			},
+		],
 	},
 	{
-		id: 'heading-2',
-		label: 'Heading 2',
-		icon: 'heading-2',
-		keywords: ['h2', 'heading'],
-		description: 'Medium section heading',
-		prefix: '## ',
-		build: () => ({ text: '## ', cursor: 3 }),
+		title: 'Advanced',
+		layout: 'list',
+		commands: [
+			{
+				id: 'code-block',
+				label: 'Code block',
+				icon: 'code-2',
+				accent: 'cyan',
+				keywords: ['code', 'block', 'fence', 'snippet'],
+				description: 'Fenced code block',
+				shortcut: '```',
+				build: () => ({ text: '```\n\n```', cursor: 4 }),
+			},
+			{
+				id: 'divider',
+				label: 'Divider',
+				icon: 'minus',
+				accent: 'plain',
+				keywords: ['divider', 'line', 'hr', 'separator'],
+				description: 'Horizontal rule',
+				standalone: true,
+				shortcut: '---',
+				build: () => ({ text: '---', cursor: 3 }),
+			},
+			{
+				id: 'blockquote-with-attribution',
+				label: 'Quote with source',
+				icon: 'message-square-quote',
+				accent: 'plain',
+				keywords: ['quote', 'cite', 'source', 'attribution'],
+				description: 'Quote and its source',
+				build: () => ({
+					text: '> quote\n> — author',
+					cursor: 2,
+				}),
+			},
+			{
+				id: 'toggle',
+				label: 'Toggle list',
+				icon: 'chevrons-up-down',
+				accent: 'plain',
+				keywords: ['toggle', 'collapse', 'fold', 'details'],
+				description: 'Collapsible block',
+				build: () => ({
+					text: '- item\n\t- nested item',
+					cursor: 2,
+				}),
+			},
+			{
+				id: 'frontmatter',
+				label: 'Properties',
+				icon: 'list-tree',
+				accent: 'plain',
+				keywords: ['frontmatter', 'properties', 'yaml', 'metadata'],
+				description: 'Note properties block',
+				build: () => ({
+					text: '---\ntags: \n---',
+					cursor: 9,
+				}),
+			},
+			{
+				id: 'code-inline-note',
+				label: 'Term and definition',
+				icon: 'book-open',
+				accent: 'plain',
+				keywords: ['definition', 'glossary', 'term', 'explain'],
+				description: 'Term with its meaning',
+				build: () => ({
+					text: '**term** — definition',
+					cursor: 2,
+				}),
+			},
+		],
 	},
-	{
-		id: 'heading-3',
-		label: 'Heading 3',
-		icon: 'heading-3',
-		keywords: ['h3', 'heading'],
-		description: 'Small section heading',
-		prefix: '### ',
-		build: () => ({ text: '### ', cursor: 4 }),
-	},
-	{
-		id: 'bullet-list',
-		label: 'Bulleted list',
-		icon: 'list',
-		keywords: ['bullet', 'list', 'ul'],
-		description: 'Simple bulleted list',
-		prefix: '- ',
-		build: () => ({ text: '- ', cursor: 2 }),
-	},
-	{
-		id: 'numbered-list',
-		label: 'Numbered list',
-		icon: 'list-ordered',
-		keywords: ['number', 'list', 'ol'],
-		description: 'Ordered numbered list',
-		prefix: '1. ',
-		build: () => ({ text: '1. ', cursor: 3 }),
-	},
-	{
-		id: 'task-list',
-		label: 'Task list',
-		icon: 'list-checks',
-		keywords: ['task', 'todo', 'checklist'],
-		description: 'Checkable to-do list',
-		prefix: '- [ ] ',
-		build: () => ({ text: '- [ ] ', cursor: 6 }),
-	},
-	{
-		id: 'quote',
-		label: 'Quote',
-		icon: 'quote',
-		keywords: ['quote', 'blockquote'],
-		description: 'Quoted block',
-		prefix: '> ',
-		build: () => ({ text: '> ', cursor: 2 }),
-	},
-	{
-		id: 'callout',
-		label: 'Callout',
-		icon: 'info',
-		keywords: ['callout', 'note', 'info', 'warning', 'tip'],
-		description: 'Highlighted callout box',
-		prefix: '> [!note] ',
-		build: () => ({ text: '> [!note] ', cursor: 10 }),
-	},
-	{
-		id: 'code-block',
-		label: 'Code block',
-		icon: 'code-2',
-		keywords: ['code', 'block', 'fence'],
-		description: 'Fenced code block',
-		build: () => ({ text: '```\n\n```', cursor: 4 }),
-	},
-	{
-		id: 'math-block',
-		label: 'Math block',
-		icon: 'sigma',
-		keywords: ['math', 'latex', 'formula'],
-		description: 'Displayed formula',
-		build: () => ({ text: '$$\n\n$$', cursor: 3 }),
-	},
-	{
-		id: 'table',
-		label: 'Table',
-		icon: 'table',
-		keywords: ['table', 'grid'],
-		description: '3 × 3 table',
-		build: () => ({
-			text: '|  |  |  |\n| --- | --- | --- |\n|  |  |  |',
-			cursor: 2,
-		}),
-	},
-	{
-		id: 'divider',
-		label: 'Divider',
-		icon: 'minus',
-		keywords: ['divider', 'line', 'hr', 'separator'],
-		description: 'Horizontal rule',
-		standalone: true,
-		build: () => ({ text: '---', cursor: 3 }),
-	},
+];
+
+/** Every block command, flattened, for filtering and lookup. */
+export const BLOCK_COMMANDS: BlockCommand[] = BLOCK_SECTIONS.flatMap(
+	(section) => section.commands,
+);
+
+export function blockSections(): BlockSection[] {
+	return BLOCK_SECTIONS;
+}
+
+/**
+ * Callout kinds, offered as the second level of the Callout entry. Obsidian
+ * understands these type names natively, so each one renders with its own
+ * icon and colour.
+ */
+export const CALLOUT_KINDS: readonly {
+	type: string;
+	label: string;
+	icon: string;
+	accent: PopupAccent;
+}[] = [
+	{ type: 'note', label: 'Note', icon: 'pencil', accent: 'blue' },
+	{ type: 'tip', label: 'Tip', icon: 'flame', accent: 'cyan' },
+	{ type: 'info', label: 'Info', icon: 'info', accent: 'blue' },
+	{ type: 'success', label: 'Success', icon: 'check-circle-2', accent: 'green' },
+	{ type: 'question', label: 'Question', icon: 'help-circle', accent: 'yellow' },
+	{ type: 'warning', label: 'Warning', icon: 'alert-triangle', accent: 'orange' },
+	{ type: 'danger', label: 'Danger', icon: 'zap', accent: 'red' },
+	{ type: 'example', label: 'Example', icon: 'list', accent: 'purple' },
 ];
 
 export const INLINE_ACTIONS: InlineAction[] = [
@@ -151,12 +312,14 @@ export const INLINE_ACTIONS: InlineAction[] = [
 		id: 'bold',
 		label: 'Bold',
 		icon: 'bold',
+		shortcut: '⌘B',
 		run: (view, from, to) => toggleInline(view, from, to, '**'),
 	},
 	{
 		id: 'italic',
 		label: 'Italic',
 		icon: 'italic',
+		shortcut: '⌘I',
 		run: (view, from, to) => toggleInline(view, from, to, '*'),
 	},
 	{
@@ -164,6 +327,12 @@ export const INLINE_ACTIONS: InlineAction[] = [
 		label: 'Strikethrough',
 		icon: 'strikethrough',
 		run: (view, from, to) => toggleInline(view, from, to, '~~'),
+	},
+	{
+		id: 'underline',
+		label: 'Underline',
+		icon: 'underline',
+		run: (view, from, to) => toggleInline(view, from, to, '<u>', '</u>'),
 	},
 	{
 		id: 'code',
@@ -282,30 +451,40 @@ function toggleInline(
 	view: EditorView,
 	from: number,
 	to: number,
-	marker: string,
+	open: string,
+	close: string = open,
 ): void {
 	const doc = view.state.doc;
-	const length = marker.length;
-	const before = from >= length ? doc.sliceString(from - length, from) : '';
-	const after = to + length <= doc.length ? doc.sliceString(to, to + length) : '';
+	const openLength = open.length;
+	const closeLength = close.length;
+	const before =
+		from >= openLength ? doc.sliceString(from - openLength, from) : '';
+	const after =
+		to + closeLength <= doc.length ? doc.sliceString(to, to + closeLength) : '';
 
-	if (before === marker && after === marker) {
+	if (before === open && after === close) {
 		view.dispatch({
 			changes: [
-				{ from: from - length, to: from },
-				{ from: to, to: to + length },
+				{ from: from - openLength, to: from },
+				{ from: to, to: to + closeLength },
 			],
-			selection: EditorSelection.range(from - length, to - length),
+			selection: EditorSelection.range(
+				from - openLength,
+				to - openLength,
+			),
 		});
-	} else {
-		view.dispatch({
-			changes: [
-				{ from, insert: marker },
-				{ from: to, insert: marker },
-			],
-			selection: EditorSelection.range(from + length, to + length),
-		});
+		return;
 	}
+	view.dispatch({
+		changes: [
+			{ from, insert: open },
+			{ from: to, insert: close },
+		],
+		selection: EditorSelection.range(
+			from + openLength,
+			to + openLength,
+		),
+	});
 }
 
 function applyLink(view: EditorView, from: number, to: number): void {

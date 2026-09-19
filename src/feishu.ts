@@ -8,12 +8,20 @@ import {
 } from '@codemirror/view';
 import {
 	BLOCK_COMMANDS,
+	CALLOUT_KINDS,
 	INLINE_ACTIONS,
 	applyBlockAtLine,
 	applyBlockAtTrigger,
+	blockSections,
 	type BlockCommand,
 } from './commands';
-import { acquirePopup, releasePopup, type Popup, type PopupItem } from './popup';
+import {
+	acquirePopup,
+	releasePopup,
+	type Popup,
+	type PopupItem,
+	type PopupSection,
+} from './popup';
 import type { FeishuStyleEditorSettings } from './settings';
 
 type MenuKind = 'slash' | 'block' | 'bubble';
@@ -96,6 +104,18 @@ function unregisterMenuKeys(doc: Document, instance: MenuKeyHost): void {
 	}
 }
 
+/** Base shape for a callout entry, overridden per kind by the submenu. */
+const CALLOUT_COMMAND: BlockCommand = {
+	id: 'callout',
+	label: 'Callout',
+	icon: 'megaphone',
+	accent: 'orange',
+	keywords: ['callout', 'note', 'info', 'warning', 'tip'],
+	description: 'Highlighted callout box',
+	prefix: '> [!note] ',
+	build: () => ({ text: '> [!note] ', cursor: 10 }),
+};
+
 export function feishuEditorExtension(
 	getSettings: () => FeishuStyleEditorSettings,
 ): Extension {
@@ -107,6 +127,10 @@ export function feishuEditorExtension(
 		private handleEl: HTMLButtonElement | null = null;
 		private menuKind: MenuKind | null = null;
 		private menuAnchor = 0;
+		/** Line a block menu was opened for; the menu dies with that line. */
+		private menuLine: number | null = null;
+		/** Skips one bubble refresh, so a command's result stays visible. */
+		private suppressBubbleOnce = false;
 		private slashTrigger: number | null = null;
 		private handleLine: number | null = null;
 		private visibleLine: number | null = null;
@@ -177,6 +201,19 @@ export function feishuEditorExtension(
 			}
 			if (this.menuKind === 'slash' && update.docChanged) {
 				this.refreshSlashMenu();
+			}
+			// A block menu belongs to the line it was opened for: once the
+			// document is edited or the caret leaves that line, keeping it up
+			// would leave a menu that no longer describes the text under it
+			// (and it would also block the selection toolbar).
+			if (this.menuKind === 'block' && this.menuLine !== null) {
+				const line = this.view.state.doc.line(
+					Math.min(this.menuLine, this.view.state.doc.lines),
+				);
+				const head = this.view.state.selection.main.head;
+				if (update.docChanged || head < line.from || head > line.to) {
+					this.closeMenu();
+				}
 			}
 			if (update.selectionSet || update.docChanged || update.focusChanged) {
 				this.scheduleHandle();
@@ -355,28 +392,63 @@ export function feishuEditorExtension(
 				return;
 			}
 			this.menuAnchor = selection.head;
-			const items = this.buildSlashItems(trigger, query);
-			if (items.length === 0) {
+			const sections = this.buildSlashSections(trigger, query);
+			const total = sections.reduce((n, s) => n + s.items.length, 0);
+			if (total === 0) {
 				this.closeMenu();
 				return;
 			}
-			this.showMenu('slash', items);
+			this.showMenu('slash', sections);
 		}
 
-		private buildSlashItems(trigger: number, query: string): PopupItem[] {
-			return this.filterCommands(query).map((command) => ({
+		private buildSlashSections(
+			trigger: number,
+			query: string,
+		): PopupSection[] {
+			const q = query.trim().toLowerCase();
+			const matches = (command: BlockCommand): boolean =>
+				q === '' ||
+				command.label.toLowerCase().includes(q) ||
+				command.id.includes(q) ||
+				command.keywords.some((keyword) => keyword.includes(q));
+
+			// While filtering, drop the headings and show one flat list, the way
+			// a search result reads better than a half-empty outline.
+			if (q !== '') {
+				return [
+					{
+						items: BLOCK_COMMANDS.filter(matches).map((command) =>
+							this.buildSlashItem(trigger, command),
+						),
+					},
+				];
+			}
+			return blockSections().map((section) => ({
+				title: section.title,
+				layout: section.layout,
+				items: section.commands.map((command) =>
+					this.buildSlashItem(trigger, command),
+				),
+			}));
+		}
+
+		private buildSlashItem(trigger: number, command: BlockCommand): PopupItem {
+			return {
 				id: command.id,
 				label: command.label,
 				icon: command.icon,
 				description: command.description,
+				shortcut: command.shortcut,
+				accent: command.accent,
 				onSelect: () => {
 					// Re-read the trigger: the menu may have been rebuilt after
 					// the document changed underneath it.
 					const current = this.validSlashTrigger();
 					this.closeMenu();
+					this.suppressBubbleOnce = true;
 					applyBlockAtTrigger(this.view, current ?? trigger, command);
 				},
-			}));
+			};
 		}
 
 		private filterCommands(query: string): BlockCommand[] {
@@ -392,15 +464,57 @@ export function feishuEditorExtension(
 			);
 		}
 
+		/**
+		 * Places the UI after the current transaction, using CodeMirror's
+		 * measure cycle when it runs and a plain timeout when it does not.
+		 * A background window never gets an animation frame, so a
+		 * measure-only path would leave the editor without a handle or menu
+		 * until it is focused again.
+		 */
+		private schedulePlacement(place: () => void): void {
+			let done = false;
+			const run = (): void => {
+				if (done) {
+					return;
+				}
+				done = true;
+				try {
+					place();
+				} catch {
+					// A stale position must never break the editor.
+				}
+			};
+			this.view.requestMeasure({ read: run });
+			this.doc.defaultView?.setTimeout(run, 0);
+		}
+
+		/**
+		 * Runs the placement only once the popup has a layout box. Positioning a
+		 * freshly built menu reads a zero height, which is how the selection
+		 * toolbar used to end up far above the text.
+		 */
+		private schedulePlacementWhenMeasured(place: () => void): void {
+			const win = this.doc.defaultView;
+			let attempts = 0;
+			const tick = (): void => {
+				const height = this.popup.el.getBoundingClientRect().height;
+				if (height > 0 || attempts >= 3) {
+					this.schedulePlacement(place);
+					return;
+				}
+				attempts += 1;
+				win?.requestAnimationFrame(tick);
+			};
+			tick();
+		}
+
 		// ---- block handle ----
 
 		private scheduleHandle(): void {
 			this.visibleLine = this.view.state.doc.lineAt(
 				this.view.state.selection.main.head,
 			).number;
-			this.view.requestMeasure({
-				read: () => this.placeHandle(),
-			});
+			this.schedulePlacement(() => this.placeHandle());
 		}
 
 		private placeHandle(): void {
@@ -414,7 +528,7 @@ export function feishuEditorExtension(
 				return;
 			}
 			const line = this.view.state.doc.line(lineNumber);
-			const coords = this.view.coordsAtPos(line.from);
+			const coords = this.coordsAt(line.from);
 			if (!coords) {
 				this.hideHandle();
 				return;
@@ -498,6 +612,12 @@ export function feishuEditorExtension(
 		// ---- bubble toolbar ----
 
 		private scheduleBubble(update: ViewUpdate): void {
+			if (this.suppressBubbleOnce) {
+				// A block command just rewrote the line: showing the toolbar on
+				// top of the result would hide what the user asked for.
+				this.suppressBubbleOnce = false;
+				return;
+			}
 			if (!this.settings.bubbleToolbar) {
 				if (this.menuKind === 'bubble') {
 					this.closeMenu();
@@ -526,55 +646,143 @@ export function feishuEditorExtension(
 			}
 			const from = selection.from;
 			const to = selection.to;
-			const items: PopupItem[] = INLINE_ACTIONS.map((action) => ({
+			// Feishu's toolbar is segmented: a block converter, then the inline
+			// marks, then the block-level marks.
+			const asItem = (action: (typeof INLINE_ACTIONS)[number]): PopupItem => ({
 				id: action.id,
 				label: action.label,
 				icon: action.icon,
+				shortcut: action.shortcut,
 				onSelect: () => {
 					this.closeMenu();
 					action.run(this.view, from, to);
 				},
-			}));
+			});
+			const inlineIds = new Set(
+				['bold', 'italic', 'underline', 'strikethrough'],
+			);
+			const sections: PopupSection[] = [
+				{
+					items: [
+						{
+							id: 'convert-block',
+							label: 'Turn into',
+							icon: 'text-cursor-input',
+							hasSubmenu: true,
+							onSelect: () => {
+								this.openBlockMenu(
+									this.view.state.doc.lineAt(selection.from).number,
+								);
+							},
+						},
+					],
+				},
+				{
+					divider: true,
+					items: INLINE_ACTIONS.filter((a) => inlineIds.has(a.id)).map(
+						asItem,
+					),
+				},
+				{
+					divider: true,
+					items: INLINE_ACTIONS.filter((a) => !inlineIds.has(a.id)).map(
+						asItem,
+					),
+				},
+			];
 			if (this.menuKind === 'bubble') {
-				this.popup.setContent(items, 'toolbar');
-				this.view.requestMeasure({ read: () => this.placeMenu() });
+				this.popup.setContent(sections, 'toolbar');
+				this.popup.show();
+				this.schedulePlacementWhenMeasured(() => this.placeMenu());
 				return;
 			}
-			this.showMenu('bubble', items, 'toolbar');
+			this.showMenu('bubble', sections, 'toolbar');
 		}
 
 		// ---- shared menu helpers ----
 
-		private openBlockMenu(lineNumber: number): void {
-			const items: PopupItem[] = BLOCK_COMMANDS.map((command) => ({
+		private buildBlockItem(
+			command: BlockCommand,
+			lineNumber: number,
+		): PopupItem {
+			return {
 				id: command.id,
 				label: command.label,
 				icon: command.icon,
 				description: command.description,
+				shortcut: command.shortcut,
+				hasSubmenu: command.hasSubmenu,
+				accent: command.accent,
 				onSelect: () => {
+					if (command.id === 'callout') {
+						this.openCalloutMenu(lineNumber);
+						return;
+					}
 					this.closeMenu();
+					this.suppressBubbleOnce = true;
 					applyBlockAtLine(this.view, lineNumber, command);
 				},
-			}));
-			this.menuAnchor = this.view.state.doc.line(
+			};
+		}
+
+		/** Second level for Callout, the way Feishu nests block variants. */
+		private openCalloutMenu(lineNumber: number): void {
+			const line = this.view.state.doc.line(
 				Math.min(Math.max(lineNumber, 1), this.view.state.doc.lines),
-			).from;
-			this.showMenu('block', items);
+			);
+			const items: PopupItem[] = CALLOUT_KINDS.map((kind) => ({
+				id: `callout-${kind.type}`,
+				label: kind.label,
+				icon: kind.icon,
+				accent: kind.accent,
+				onSelect: () => {
+					this.closeMenu();
+					this.suppressBubbleOnce = true;
+					applyBlockAtLine(this.view, line.from, {
+						...CALLOUT_COMMAND,
+						build: () => ({
+							text: `> [!${kind.type}] `,
+							cursor: kind.type.length + 5,
+						}),
+					});
+				},
+			}));
+			this.menuAnchor = line.from;
+			this.menuLine = line.number;
+			this.showMenu('block', [{ items }]);
+		}
+
+		private openBlockMenu(lineNumber: number): void {
+			const sections: PopupSection[] = blockSections().map((section) => ({
+				title: section.title,
+				layout: section.layout,
+				items: section.commands.map((command) =>
+					this.buildBlockItem(command, lineNumber),
+				),
+			}));
+			const anchorLine = this.view.state.doc.line(
+				Math.min(Math.max(lineNumber, 1), this.view.state.doc.lines),
+			);
+			this.menuAnchor = anchorLine.from;
+			this.menuLine = anchorLine.number;
+			this.showMenu('block', sections);
 		}
 
 		private showMenu(
 			kind: MenuKind,
-			items: PopupItem[],
+			sections: PopupSection[],
 			mode: 'list' | 'toolbar' = 'list',
 		): void {
 			this.takeOverUi();
 			this.menuKind = kind;
-			this.popup.setContent(items, mode);
+			this.popup.setContent(sections, mode);
+			// Reveal before measuring: a hidden element reports a zero height,
+			// which would misplace a menu that has to fit above its anchor.
 			this.popup.show();
 			// The anchor may sit in a part of the document that has not been
 			// laid out yet (the character just typed, a fresh selection), so
 			// coordinates are read on a measure pass with fallbacks.
-			this.view.requestMeasure({ read: () => this.placeMenu() });
+			this.schedulePlacementWhenMeasured(() => this.placeMenu());
 		}
 
 		/** Places the open menu once layout can be read. */
@@ -588,9 +796,26 @@ export function feishuEditorExtension(
 				return;
 			}
 			if (kind === 'bubble') {
-				this.popup.positionAt(coords.left, coords.top, true);
+				// A slightly wider gap than the list menu: headings in Obsidian
+				// carry a negative bottom margin, so the line box starts above
+				// the text and a tight gap reads as an overlap.
+				this.popup.positionAt(coords.left, coords.top, true, 14);
 			} else {
 				this.popup.positionAt(coords.left, coords.bottom + 6);
+			}
+		}
+
+
+		/** `coordsAtPos` throws on a position the view has not seen yet. */
+		private coordsAt(pos: number): {
+			left: number;
+			top: number;
+			bottom: number;
+		} | null {
+			try {
+				return this.view.coordsAtPos(pos);
+			} catch {
+				return null;
 			}
 		}
 
@@ -598,14 +823,21 @@ export function feishuEditorExtension(
 		private anchorCoords(): { left: number; top: number; bottom: number } | null {
 			const state = this.view.state;
 			const selection = state.selection.main;
-			const candidates = [
-				this.menuAnchor,
-				selection.from,
-				selection.head,
-				state.doc.lineAt(Math.min(this.menuAnchor, state.doc.length)).from,
-			];
+			// A selection toolbar follows the caret; a list menu follows the
+			// position it was opened at.
+			const candidates =
+				this.menuKind === 'bubble'
+					? [selection.from, selection.head, this.menuAnchor]
+					: [
+							this.menuAnchor,
+							selection.from,
+							selection.head,
+							state.doc.lineAt(
+								Math.min(this.menuAnchor, state.doc.length),
+							).from,
+						];
 			for (const pos of candidates) {
-				const coords = this.view.coordsAtPos(
+				const coords = this.coordsAt(
 					Math.min(Math.max(pos, 0), state.doc.length),
 				);
 				if (coords) {
@@ -623,6 +855,7 @@ export function feishuEditorExtension(
 			this.popup.hide();
 			this.menuKind = null;
 			this.slashTrigger = null;
+			this.menuLine = null;
 		}
 
 		// ---- global listeners ----
@@ -649,10 +882,10 @@ export function feishuEditorExtension(
 
 		private readonly onViewportChange = (): void => {
 			if (this.menuKind !== null) {
-				this.view.requestMeasure({ read: () => this.placeMenu() });
+				this.schedulePlacement(() => this.placeMenu());
 			}
 			if (this.settings.blockHandle) {
-				this.view.requestMeasure({ read: () => this.placeHandle() });
+				this.schedulePlacement(() => this.placeHandle());
 			}
 		};
 	}
