@@ -24,11 +24,8 @@ data.json
 # Local test vault
 Test/
 
-# Scratch: headless render of the popup for colour work
-.tmp-colors/
+# Generated preview pages (tools/preview)
+tools/preview/*.html
 
 # DSH vault binding for this machine
 dsh.obsidian.json
-
-# Tool bundles dropped next to the project
-.harness-*.cjs

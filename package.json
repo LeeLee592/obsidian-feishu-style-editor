@@ -1,7 +1,7 @@
 {
 	"name": "feishu-style-editor",
 	"version": "0.1.0",
-	"description": "Feishu-style document editing: slash commands, floating toolbar, and line block handles.",
+	"description": "Feishu-style document editing: a searchable slash menu, a block insert palette, a floating toolbar and line handles.",
 	"main": "main.js",
 	"type": "module",
 	"scripts": {
@@ -10,9 +10,15 @@
 		"deploy:test": "node deploy-test.mjs",
 		"version": "node version-bump.mjs && git add manifest.json versions.json",
 		"lint": "eslint .",
+		"preview": "node tools/preview/build.mjs",
+		"screenshots": "node tools/preview/shots.mjs && node tools/preview/shoot.mjs",
 		"verify:live": "./verify-live.sh"
 	},
-	"keywords": [],
+	"keywords": [
+		"editor",
+		"slash-commands",
+		"toolbar"
+	],
 	"license": "MIT",
 	"devDependencies": {
 		"@codemirror/state": "^6.7.4",

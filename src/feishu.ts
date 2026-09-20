@@ -42,7 +42,6 @@ interface MenuKeyHost {
 	readonly instanceId: number;
 	handlesDomTarget(target: Node | null): boolean;
 	hasOpenMenu(): boolean;
-	handlesEditorFocus(): boolean;
 	closeAnyMenu(): void;
 	handleKey(event: KeyboardEvent): boolean;
 }
@@ -161,10 +160,6 @@ export function feishuEditorExtension(
 
 		hasOpenMenu(): boolean {
 			return this.menuKind !== null;
-		}
-
-		handlesEditorFocus(): boolean {
-			return this.isActiveEditor();
 		}
 
 		/** Menu commands are global: only one menu may be open per document. */

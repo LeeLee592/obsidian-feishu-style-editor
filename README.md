@@ -26,11 +26,11 @@
 
 选中文本后弹出分段式工具栏，形如飞书的浮动条：
 
-`转为 ▾` │ `B` `I` `S` `U` │ `` ` `` `==` 🔗
+`转换为 ▾` │ `B` `I` `S` `U` │ 行内代码 · 高亮 · 链接
 
 - 左段是块类型转换入口（`Turn into`），展开完整块面板。
 - 中段是行内字形：加粗、斜体、删除线、下划线（`<u>…</u>`）。
-- 右段是代码、高亮、链接；高亮按钮下方带一条黄色标记，对应飞书工具栏上的颜色示意。
+- 右段是行内代码（`</>`）、高亮、链接；高亮按钮下方带一条黄色标记，对应飞书工具栏上的颜色示意。
 
 点击任一段的按钮只改 Markdown 源码，工具栏在应用块命令后会自动收起，避免遮住刚生成的内容。
 
@@ -61,6 +61,15 @@ body {
 
 ![悬浮工具栏](screenshot-toolbar.png)
 
+## 安装
+
+插件尚未进入社区插件市场，手动安装：
+
+1. 从 [Releases](https://github.com/LeeLee592/obsidian-feishu-style-editor/releases) 下载 `main.js`、`manifest.json`、`styles.css`；
+2. 放进 `<库目录>/.obsidian/plugins/feishu-style-editor/`；
+3. 在「设置 → 第三方插件」里启用 **Feishu Style Editor**。
+   （也可以用 BRAT 添加本仓库地址。）
+
 ## 开发
 
 ```bash
@@ -69,12 +78,18 @@ pnpm run dev         # 开发模式（监听）
 pnpm run build       # 构建 production
 pnpm run lint        # ESLint
 pnpm run deploy:test # 部署到 Test/ vault
+pnpm run preview     # 离线渲染各面板，浏览器里看样式
+pnpm run screenshots # 重新生成 README 里的两张截图
 pnpm run verify:live # 对运行中的 Obsidian 做端到端验证
 ```
 
+### 离线预览与截图
+
+`tools/preview/` 把 `popup.ts`、`commands.ts`、`styles.css` 这些真正发货的代码 bundle 进一个普通网页（`obsidian` 用桩替代），因此不启动 Obsidian 也能看菜单长什么样；`pnpm run screenshots` 再用无头 Chrome 抓出 README 的两张图。加新块或改配色时，先在这里看效果，再上真机。
+
 ### 真机验证
 
-`verify-live.sh` 通过 Obsidian CLI 与 Chrome DevTools Protocol 驱动真实运行的应用，共 53 项检查：斜杠菜单的开合、关键字栏（`/` 加过滤词）、过滤与执行、转义撤销、方向键选择；`+` 面板的两段结构——图标宫格 + 常用列表、无关键字栏、二级菜单箭头；两套菜单的结构差异；悬浮工具栏；`+` 手柄；飞书配色（读取运行中的计算样式：底白、发丝线、蓝底当前块、宫格单色、列表行彩色）；设置持久化与彩色开关；控制台无插件报错。
+`verify-live.sh` 通过 Obsidian CLI 与 Chrome DevTools Protocol 驱动真实运行的应用，覆盖：斜杠菜单的开合、关键字栏（`/` 加过滤词）、过滤与执行、转义撤销、方向键选择；`+` 面板的两段结构——图标宫格 + 常用列表、无关键字栏、二级菜单箭头；两套菜单的结构差异；悬浮工具栏；`+` 手柄；飞书配色（读取运行中的计算样式：底白、发丝线、蓝底当前块、宫格单色、列表行彩色）；设置持久化与彩色开关；控制台无插件报错。断言按「语言无关」写：用条目的 `id` 而不是界面文案，中英文界面都能跑。
 
 脚本遵循「不抢窗口」原则：CodeMirror 的输入管线只接受可信事件，因此需要真实按键的检查集中在约 10 秒的前台阶段——脚本先记录当前前台应用并明确提示，结束后再切回去；其余检查全部在后台完成。
 

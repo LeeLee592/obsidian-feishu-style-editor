@@ -3,7 +3,7 @@
 	"name": "Feishu Style Editor",
 	"version": "0.1.0",
 	"minAppVersion": "1.13.0",
-	"description": "Feishu-style document editing: slash commands, floating toolbar, and line block handles.",
+	"description": "Feishu-style editing: a searchable slash menu, a block insert palette, a floating toolbar and line handles.",
 	"author": "LeeLee",
 	"authorUrl": "https://github.com/LeeLee592",
 	"isDesktopOnly": false

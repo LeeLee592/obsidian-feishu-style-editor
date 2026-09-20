@@ -109,7 +109,6 @@ export class Popup {
 	private selected = 0;
 	private mode: PopupMode = 'list';
 	private iconGrid = false;
-	private visible = false;
 
 	constructor(doc: Document) {
 		this.el = doc.body.createDiv({ cls: 'fse-popup' });
@@ -127,10 +126,6 @@ export class Popup {
 		this.listEl = this.el.createEl('ul', { cls: 'fse-popup-list' });
 		this.el.addEventListener('mousedown', (evt) => evt.preventDefault());
 		this.el.hide();
-	}
-
-	get isVisible(): boolean {
-		return this.visible;
 	}
 
 	/** True while the content holds an icon-only grid, which arrow keys walk. */
@@ -234,10 +229,6 @@ export class Popup {
 		this.updateActive();
 	}
 
-	get selectedIndex(): number {
-		return this.selected;
-	}
-
 	moveSelection(delta: number): void {
 		this.setSelected(this.selected + delta);
 	}
@@ -247,12 +238,10 @@ export class Popup {
 	}
 
 	show(): void {
-		this.visible = true;
 		this.el.show();
 	}
 
 	hide(): void {
-		this.visible = false;
 		this.el.hide();
 	}
 
@@ -297,23 +286,8 @@ export class Popup {
 		this.el.style.top = `${top}px`;
 	}
 
-	/**
-	 * Keep the menu inside the viewport after the document scrolled under it.
-	 */
-	clampPosition(): void {
-		if (!this.visible) {
-			return;
-		}
-		const rect = this.el.getBoundingClientRect();
-		const win = this.el.win;
-		if (rect.bottom > win.innerHeight - 8) {
-			this.positionAt(rect.left, win.innerHeight - rect.height - 8);
-		}
-	}
-
 	destroy(): void {
 		this.items = [];
-		this.visible = false;
 		this.el.remove();
 	}
 
