@@ -12,6 +12,10 @@ export default defineConfig(
 		'main.js',
 		'package-lock.json',
 		'Test/**',
+		// Scratch: headless render of the popup for colour work.
+		'.tmp-colors/**',
+		// Bundles a tool may drop next to the project while it inspects it.
+		'.harness-*.cjs',
 	]),
 	{
 		languageOptions: {

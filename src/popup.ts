@@ -23,18 +23,38 @@ export interface PopupItem {
 	/** Trailing affordance for entries that open a further choice. */
 	hasSubmenu?: boolean;
 	accent?: PopupAccent;
+	/** True for the block the caret already sits in, tinted like Feishu does. */
+	active?: boolean;
 	onSelect: () => void;
 }
 
-export type PopupLayout = 'grid' | 'list';
+export type PopupLayout = 'list' | 'icons';
+
+/** Rendering options that depend on the user's settings and the menu kind. */
+export interface PopupOptions {
+	/** Tint every icon with the hue of its block kind, as Feishu does. */
+	coloredIcons?: boolean;
+	/**
+	 * Renders Feishu's keyword field above the list. The editor keeps the
+	 * real caret, so this row only mirrors what has been typed.
+	 */
+	search?: {
+		/** What the document holds: the trigger slash plus any keyword. */
+		value: string;
+		/** Grey hint trailing the value while no keyword has been typed. */
+		hint?: string;
+	};
+	/** Accessible name for the popup, in the interface language. */
+	ariaLabel?: string;
+}
 
 export interface PopupSection {
 	/** Omitted for a section without a heading. */
 	title?: string;
 	items: PopupItem[];
 	/**
-	 * `grid` renders compact two-column icon tiles, the way Feishu's basic
-	 * block palette does; `list` renders icon + label + description rows.
+	 * `icons` renders a compact icon-only grid (Feishu's basic palette),
+	 * `list` renders icon + label rows.
 	 */
 	layout?: PopupLayout;
 	/**
@@ -81,14 +101,29 @@ export function releasePopup(doc: Document, popup: Popup): void {
  */
 export class Popup {
 	readonly el: HTMLDivElement;
+	private readonly searchEl: HTMLDivElement;
+	private readonly searchTextEl: HTMLSpanElement;
+	private readonly searchHintEl: HTMLSpanElement;
 	private readonly listEl: HTMLUListElement;
 	private items: PopupItem[] = [];
 	private selected = 0;
 	private mode: PopupMode = 'list';
+	private iconGrid = false;
 	private visible = false;
 
 	constructor(doc: Document) {
 		this.el = doc.body.createDiv({ cls: 'fse-popup' });
+		// Feishu's slash menu opens with a keyword field showing the typed
+		// slash; the "+" panel has no such row, which is what tells the two
+		// menus apart at a glance.
+		this.searchEl = this.el.createDiv({ cls: 'fse-popup-search' });
+		this.searchTextEl = this.searchEl.createSpan({
+			cls: 'fse-popup-search-text',
+		});
+		this.searchHintEl = this.searchEl.createSpan({
+			cls: 'fse-popup-search-hint',
+		});
+		this.searchEl.hide();
 		this.listEl = this.el.createEl('ul', { cls: 'fse-popup-list' });
 		this.el.addEventListener('mousedown', (evt) => evt.preventDefault());
 		this.el.hide();
@@ -98,20 +133,37 @@ export class Popup {
 		return this.visible;
 	}
 
+	/** True while the content holds an icon-only grid, which arrow keys walk. */
+	get usesIconGrid(): boolean {
+		return this.iconGrid;
+	}
+
 	setContent(
 		sections: PopupSection[],
 		mode: PopupMode = 'list',
+		options: PopupOptions = {},
 	): void {
 		this.items = sections.flatMap((section) => section.items);
 		this.selected = 0;
 		this.mode = mode;
+		this.iconGrid =
+			mode === 'list' &&
+			sections.some(
+				(section) => (section.layout ?? 'list') === 'icons',
+			);
 		this.listEl.empty();
+		// The element outlives its content: without this a menu reopened from
+		// a scrolled state would start halfway down, hiding its first rows.
+		this.el.scrollTop = 0;
 		this.el.toggleClass('fse-popup-toolbar', mode === 'toolbar');
+		this.el.toggleClass('fse-icons-colored', options.coloredIcons === true);
 		this.el.setAttr('role', mode === 'toolbar' ? 'toolbar' : 'listbox');
 		this.el.setAttr(
 			'aria-label',
-			mode === 'toolbar' ? 'Formatting' : 'Block menu',
+			options.ariaLabel ??
+				(mode === 'toolbar' ? 'Formatting' : 'Block menu'),
 		);
+		this.renderSearch(options.search);
 		for (const section of sections) {
 			if (section.items.length === 0) {
 				continue;
@@ -150,6 +202,27 @@ export class Popup {
 			}
 		}
 		this.updateActive();
+	}
+
+	/**
+	 * The keyword row mirrors what the document holds after the slash — the
+	 * slash itself plus the filter — and trails the grey hint while nothing
+	 * has been typed yet. The editor owns the caret, so the row never takes
+	 * focus, it only shows the filter.
+	 */
+	private renderSearch(search: PopupOptions['search']): void {
+		if (!search) {
+			this.searchEl.hide();
+			return;
+		}
+		this.searchTextEl.setText(search.value);
+		const hint = search.hint ?? '';
+		this.searchHintEl.setText(hint);
+		this.searchHintEl.toggleClass('is-hidden', hint === '');
+		// The typed filter is already in the document, so announcing it here
+		// would only repeat the editor to a screen reader.
+		this.searchEl.setAttr('aria-hidden', 'true');
+		this.searchEl.show();
 	}
 
 	setSelected(index: number): void {
@@ -251,7 +324,10 @@ export class Popup {
 		layout: PopupLayout = 'list',
 	): void {
 		const li = parent.createEl('li', { cls: 'fse-popup-item' });
-		const attr: Record<string, string> = { type: 'button' };
+		const attr: Record<string, string> = {
+			type: 'button',
+			'data-item-id': item.id,
+		};
 		if (mode === 'toolbar') {
 			attr['aria-label'] = item.label;
 			attr.title = item.label;
@@ -260,6 +336,7 @@ export class Popup {
 			cls: 'fse-popup-item-button',
 			attr,
 		});
+		button.toggleClass('is-current', item.active === true);
 
 		const tile = button.createSpan({
 			cls: 'fse-popup-item-tile',
@@ -273,14 +350,20 @@ export class Popup {
 		}
 
 		li.setAttr('role', 'option');
-		button.toggleClass('is-tile', layout === 'grid');
+		if (layout === 'icons') {
+			// An icon grid carries no room for a label, so the name lives in
+			// the tooltip and the accessible label instead.
+			button.toggleClass('is-icon', true);
+			button.setAttr('aria-label', item.label);
+			button.setAttr('title', tooltip(item));
+			this.bindSelection(button, item);
+			return;
+		}
+
+		button.setAttr('title', tooltip(item));
 		const body = button.createSpan({ cls: 'fse-popup-item-body' });
 		const title = body.createSpan({ cls: 'fse-popup-item-label' });
 		title.setText(item.label);
-		if (item.description && layout === 'list') {
-			const descEl = body.createSpan({ cls: 'fse-popup-item-desc' });
-			descEl.setText(item.description);
-		}
 		if (item.shortcut) {
 			button.createSpan({
 				cls: 'fse-popup-item-shortcut',
@@ -311,18 +394,26 @@ export class Popup {
 	}
 
 	private updateActive(): void {
+		if (this.mode === 'toolbar') {
+			// A toolbar has no cursor, so no button is the selected one: the
+			// arrow keys stay with the editor while it is up.
+			return;
+		}
 		const buttons = this.listEl.querySelectorAll<HTMLElement>(
 			'.fse-popup-item-button',
 		);
 		buttons.forEach((el, index) => {
 			const active = index === this.selected;
 			el.toggleClass('is-active', active);
-			if (this.mode === 'list') {
-				el.setAttr('aria-selected', active ? 'true' : 'false');
-			}
+			el.setAttr('aria-selected', active ? 'true' : 'false');
 			if (active) {
 				el.scrollIntoView({ block: 'nearest' });
 			}
 		});
 	}
+}
+
+/** Hover text for an entry: its name, plus what it inserts when known. */
+function tooltip(item: PopupItem): string {
+	return item.description ? `${item.label} — ${item.description}` : item.label;
 }

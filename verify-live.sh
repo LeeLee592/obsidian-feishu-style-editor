@@ -191,12 +191,63 @@ state() {
 			caretCol: cm.state.selection.main.head - line.from,
 			menu: vis,
 			scope: vis ? (p.classList.contains('fse-popup-toolbar') ? 'toolbar' : 'list') : null,
+			// Labels follow the app's language, so the assertions below use the
+			// language-independent `id`s the menu carries on every entry.
 			items: vis ? [...p.querySelectorAll('.fse-popup-item')].map(el => {
 				const label = el.querySelector('.fse-popup-item-label');
 				const button = el.querySelector('.fse-popup-item-button');
 				return label ? label.textContent : (button ? button.getAttribute('aria-label') : null);
 			}).filter(Boolean) : [],
+			ids: vis ? [...p.querySelectorAll('.fse-popup-item-button')].map(b => b.getAttribute('data-item-id')) : [],
 			active: vis ? (p.querySelector('.is-active .fse-popup-item-label') || {}).textContent : null,
+			activeId: vis ? (p.querySelector('.is-active') || {}).getAttribute?.('data-item-id') ?? null : null,
+		});
+	})()"
+}
+
+# Opens the block palette from the line handle. Synthetic clicks are enough:
+# the handle listens for plain DOM events, not for the input pipeline.
+# Several editors can be alive at once and every one of them owns a handle, so
+# the visible one — the active editor's — is the one to click.
+open_palette() {
+	ev "(() => {
+		const handles = [...document.querySelectorAll('.fse-block-handle')];
+		const h = handles.find(x => getComputedStyle(x).display !== 'none') || handles[0];
+		if (!h) return 'nohandle';
+		h.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+		h.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+		return 'ok';
+	})()" >/dev/null
+	sleep 0.8
+}
+
+# Computed colours of the open palette — the tokens themselves, read back
+# from the live DOM, so a broken variable shows up as a failed check.
+palette_colours() {
+	ev "(() => {
+		const p = [...document.querySelectorAll('.fse-popup')].find(x => getComputedStyle(x).display !== 'none');
+		if (!p) return JSON.stringify({ error: 'no palette' });
+		const px = el => (el ? getComputedStyle(el) : {});
+		const current = p.querySelector('.fse-popup-item-button.is-current');
+		const currentTile = current ? current.querySelector('.fse-popup-item-tile') : null;
+		const label = current ? current.querySelector('.fse-popup-item-label') : null;
+		const section = p.querySelector('.fse-popup-section + .fse-popup-section');
+		const tileOf = id => p.querySelector('.fse-popup-item-button[data-item-id=\"' + id + '\"] .fse-popup-item-tile');
+		const heading = tileOf('heading-1');
+		return JSON.stringify({
+			surface: px(p).backgroundColor,
+			border: px(p).borderTopColor,
+			divider: section ? px(section).borderTopColor : null,
+			icon: px(p.querySelector('.fse-popup-item-tile')).color,
+			current: label ? label.textContent : null,
+			currentId: current ? current.getAttribute('data-item-id') : null,
+			currentLabel: label ? px(label).color : null,
+			currentTile: currentTile ? px(currentTile).backgroundColor : null,
+			currentIcon: currentTile ? px(currentTile).color : null,
+			headingTile: heading ? px(heading).backgroundColor : null,
+			headingIcon: heading ? px(heading).color : null,
+			tableIcon: px(tileOf('table')).color,
+			imageIcon: px(tileOf('image')).color,
 		});
 	})()"
 }
@@ -236,13 +287,40 @@ SECTION=1
 		FAIL=$((FAIL + 1))
 		printf '  FAIL  a typed slash opens the block menu\n        got: %s\n' "$R"
 	fi
-	check "block list is complete" '"Table"' "$(state)"
+	check "block list is complete" '"code-block"' "$(state)"
+	SLASH="$(ev "(() => {
+		const p = [...document.querySelectorAll('.fse-popup')].find(x => getComputedStyle(x).display !== 'none');
+		if (!p) return JSON.stringify({ error: 'no menu' });
+		const search = p.querySelector('.fse-popup-search');
+		const field = p.querySelector('.fse-popup-search-text');
+		const hint = p.querySelector('.fse-popup-search-hint');
+		const hintText = hint ? hint.textContent : '';
+		return JSON.stringify({
+			search: !!search && getComputedStyle(search).display !== 'none',
+			field: field ? field.textContent : null,
+			hint: hintText,
+			hintOk: ['输入关键词', 'Type a keyword'].includes(hintText),
+			grids: p.querySelectorAll('.fse-popup-group-icons').length,
+			lists: p.querySelectorAll('.fse-popup-group-list').length,
+		});
+	})()")"
+	check "the keyword field is shown" '"search":true' "$SLASH"
+	check "the field mirrors the typed slash" '"field":"/"' "$SLASH"
+	check "the hint invites a keyword" '"hintOk":true' "$SLASH"
+	check "/ has no icon grid" '"grids":0' "$SLASH"
+	check "/ lists every group" '"lists":2' "$SLASH"
 	real_key q KeyQ 81 q
 	real_key u KeyU 85 u
 	real_key o KeyO 79 o
 	FILTERED="$(state)"
-check "typing narrows the menu" '"active":"Quote"' "$FILTERED"
-check "the query matched the quote entries" '"Quote with source"' "$FILTERED"
+check "typing narrows the menu" '"activeId":"quote"' "$FILTERED"
+check "the field mirrors the whole query" '"field":"/quo"' \
+	"$(ev "(() => {
+		const p = [...document.querySelectorAll('.fse-popup')].find(x => getComputedStyle(x).display !== 'none');
+		const field = p && p.querySelector('.fse-popup-search-text');
+		return JSON.stringify({ field: field ? field.textContent : null });
+	})()")"
+check "the query matched the quote entries" '"blockquote-with-attribution"' "$FILTERED"
 	real_key Enter Enter 13
 	S="$(state)"
 	check "Enter turns the line into a quote" '"lineText":"> "' "$S"
@@ -264,9 +342,9 @@ SECTION=3
 	setup_note 'alpha\n' 2 0
 	slash_and_check >/dev/null
 	dom_key ArrowDown ArrowDown 40
-	check "ArrowDown selects the second block" '"active":"Heading 1"' "$(state)"
+	check "ArrowDown selects the second block" '"activeId":"heading-1"' "$(state)"
 	dom_key ArrowUp ArrowUp 38
-	check "ArrowUp wraps back to the first block" '"active":"Text"' "$(state)"
+	check "ArrowUp wraps back to the first block" '"activeId":"text"' "$(state)"
 	dom_key Escape Escape 27
 else
 	skip "slash menu keystroke tests" "no foreground window"
@@ -316,7 +394,7 @@ ev "(() => {
 sleep 0.7
 S="$(state)"
 check "toolbar appears for a selection" '"scope":"toolbar"' "$S"
-check "toolbar offers bold" '"Bold"' "$S"
+check "toolbar offers bold" '"bold"' "$S"
 
 echo
 echo "7. block handle"
@@ -331,41 +409,39 @@ ev "(() => {
 	return 'ok';
 })()" >/dev/null
 sleep 0.7
-check "the handle opens the block menu" '"Table"' "$(state)"
+check "the handle opens the block menu" '"table"' "$(state)"
 
 echo
-echo "8. the palette is organised into sections"
+echo "8. the + panel is not the / menu"
 SECTION=8
 setup_note 'plain text line\n' 1 0
-ev "(() => {
-	const h = document.querySelector('.fse-block-handle');
-	if (!h) return 'nohandle';
-	h.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
-	h.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
-	return 'ok';
-})()" >/dev/null
-sleep 0.8
+open_palette
 PALETTE="$(state)"
-check "basic blocks are listed" '"Heading 1"' "$PALETTE"
-check "common blocks are listed" '"Table"' "$PALETTE"
-check "advanced blocks are listed" '"Code block"' "$PALETTE"
-check "the submenu entry is present" '"Callout"' "$PALETTE"
+check "basic blocks are listed" '"heading-1"' "$PALETTE"
+check "common blocks are listed" '"table"' "$PALETTE"
+check "code blocks are listed" '"code-block"' "$PALETTE"
+check "the submenu entry is present" '"callout"' "$PALETTE"
 LAYOUT="$(ev "(() => {
 	const p = [...document.querySelectorAll('.fse-popup')].find(x => getComputedStyle(x).display !== 'none');
 	if (!p) return JSON.stringify({ error: 'no palette' });
+	const search = p.querySelector('.fse-popup-search');
 	return JSON.stringify({
 		titles: [...p.querySelectorAll('.fse-popup-section-title')].map(e => e.textContent),
-		grids: [...p.querySelectorAll('.fse-popup-group-grid')].length,
+		sections: p.querySelectorAll('.fse-popup-section').length,
+		grids: [...p.querySelectorAll('.fse-popup-group-icons')].length,
 		lists: [...p.querySelectorAll('.fse-popup-group-list')].length,
 		accented: [...p.querySelectorAll('.fse-popup-item-tile')].filter(t => t.getAttribute('data-accent') !== 'plain').length,
 		chevrons: p.querySelectorAll('.fse-popup-item-chevron').length,
+		search: !!search && getComputedStyle(search).display !== 'none',
 	});
 })()")"
-check "sections carry Feishu-style headings" '"titles":["Basic","Common","Advanced"]' "$LAYOUT"
+check "+ carries Feishu's two headings" '"titles":["' "$LAYOUT"
+check "+ has exactly two groups" '"sections":2' "$LAYOUT"
 check "the basic section renders as an icon grid" '"grids":1' "$LAYOUT"
-check "the other sections render as lists" '"lists":2' "$LAYOUT"
-check "icons are colour-coded" '"accented":' "$LAYOUT"
+check "the rest renders as a labelled list" '"lists":1' "$LAYOUT"
+check "icons carry their kind's colour" '"accented":' "$LAYOUT"
 check "the submenu entry shows a chevron" '"chevrons":1' "$LAYOUT"
+check "+ has no keyword field" '"search":false' "$LAYOUT"
 close_section
 
 echo
@@ -378,7 +454,64 @@ check "the value reached disk" '"slashCommands":false' \
 ev "app.plugins.plugins['feishu-style-editor'].updateSettings({ slashCommands: true })" >/dev/null
 
 echo
-echo "10. no runtime errors"
+echo "10. Feishu colour system"
+SECTION=10
+setup_note '## heading line\n' 1 0
+open_palette
+if [ "$(ev "(() => document.body.classList.contains('theme-dark') ? 'dark' : 'light')" | flat)" = "dark" ]; then
+	SURFACE='rgb(43,43,43)'
+	BORDER='rgb(61,61,61)'
+	ICON='rgb(235,235,235)'
+	CHIP='rgb(44,60,94)'
+	ACCENT='rgb(76,136,255)'
+	GREEN='rgb(78,203,58)'
+	YELLOW='rgb(255,198,10)'
+else
+	SURFACE='rgb(255,255,255)'
+	BORDER='rgb(222,224,227)'
+	ICON='rgb(31,35,41)'
+	CHIP='rgb(225,234,255)'
+	ACCENT='rgb(51,112,255)'
+	GREEN='rgb(52,199,36)'
+	YELLOW='rgb(232,166,0)'
+fi
+COLOURS="$(palette_colours)"
+check "the menu sits on Feishu's surface" "\"surface\":\"$SURFACE\"" "$COLOURS"
+check "the frame draws Feishu's hairline" "\"border\":\"$BORDER\"" "$COLOURS"
+check "sections are split by a hairline" "\"divider\":\"$BORDER\"" "$COLOURS"
+check "the basic grid stays monochrome" "\"headingIcon\":\"$ICON\"" "$COLOURS"
+check "the caret's block is the marked one" '"currentId":"heading-2"' "$COLOURS"
+check "the current block carries the blue chip" "\"currentTile\":\"$CHIP\"" "$COLOURS"
+check "the chip icon takes the accent too" "\"currentIcon\":\"$ACCENT\"" "$COLOURS"
+check "no chip is painted on other entries" '"headingTile":"rgba(0,0,0,0)"' "$COLOURS"
+check "the table row keeps Feishu's green" "\"tableIcon\":\"$GREEN\"" "$COLOURS"
+check "the image row keeps Feishu's yellow" "\"imageIcon\":\"$YELLOW\"" "$COLOURS"
+close_section
+
+echo
+echo "10b. the caret's block inside a labelled row"
+SECTION=101
+setup_note '> [!tip] note\n' 1 0
+open_palette
+COLOURS="$(palette_colours)"
+check "a callout line marks the callout row" '"currentId":"callout"' "$COLOURS"
+check "the current row's label takes the accent" "\"currentLabel\":\"$ACCENT\"" "$COLOURS"
+check "the current row's icon takes the accent" "\"currentIcon\":\"$ACCENT\"" "$COLOURS"
+
+echo
+echo "11. the optional monochrome mode"
+ORIGINAL_COLORED="$(ev "app.plugins.plugins['feishu-style-editor'].settings.coloredIcons" | flat)"
+check "coloured rows are the default" '"coloredIcons":true' \
+	"$(ev "app.plugins.plugins['feishu-style-editor'].settings")"
+ev "app.plugins.plugins['feishu-style-editor'].updateSettings({ coloredIcons: false })" >/dev/null
+open_palette
+COLOURS="$(palette_colours)"
+check "turning it off greys the list rows too" "\"tableIcon\":\"$ICON\"" "$COLOURS"
+ev "app.plugins.plugins['feishu-style-editor'].updateSettings({ coloredIcons: $ORIGINAL_COLORED })" >/dev/null
+close_section
+
+echo
+echo "12. no runtime errors"
 check "no plugin errors in the console" '0' \
 	"$(oc dev:console level=error limit=30 | grep -ci 'feishu-style-editor')"
 

@@ -6,25 +6,34 @@ import {
 	type PluginValue,
 	type ViewUpdate,
 } from '@codemirror/view';
+import { setIcon } from 'obsidian';
 import {
 	BLOCK_COMMANDS,
 	CALLOUT_KINDS,
 	INLINE_ACTIONS,
+	activeBlockId,
 	applyBlockAtLine,
 	applyBlockAtTrigger,
 	blockSections,
+	calloutCommand,
+	commandDescription,
+	commandLabel,
+	commandMatches,
+	sectionTitle,
 	type BlockCommand,
 } from './commands';
+import { pick } from './i18n';
 import {
 	acquirePopup,
 	releasePopup,
 	type Popup,
 	type PopupItem,
+	type PopupOptions,
 	type PopupSection,
 } from './popup';
 import type { FeishuStyleEditorSettings } from './settings';
 
-type MenuKind = 'slash' | 'block' | 'bubble';
+type MenuKind = 'slash' | 'block' | 'convert' | 'bubble';
 
 /** Trailing text after the slash that still counts as a filter query. */
 const SLASH_QUERY_LIMIT = 24;
@@ -103,18 +112,6 @@ function unregisterMenuKeys(doc: Document, instance: MenuKeyHost): void {
 		instancesByDocument.delete(doc);
 	}
 }
-
-/** Base shape for a callout entry, overridden per kind by the submenu. */
-const CALLOUT_COMMAND: BlockCommand = {
-	id: 'callout',
-	label: 'Callout',
-	icon: 'megaphone',
-	accent: 'orange',
-	keywords: ['callout', 'note', 'info', 'warning', 'tip'],
-	description: 'Highlighted callout box',
-	prefix: '> [!note] ',
-	build: () => ({ text: '> [!note] ', cursor: 10 }),
-};
 
 export function feishuEditorExtension(
 	getSettings: () => FeishuStyleEditorSettings,
@@ -206,7 +203,10 @@ export function feishuEditorExtension(
 			// document is edited or the caret leaves that line, keeping it up
 			// would leave a menu that no longer describes the text under it
 			// (and it would also block the selection toolbar).
-			if (this.menuKind === 'block' && this.menuLine !== null) {
+			if (
+				(this.menuKind === 'block' || this.menuKind === 'convert') &&
+				this.menuLine !== null
+			) {
 				const line = this.view.state.doc.line(
 					Math.min(this.menuLine, this.view.state.doc.lines),
 				);
@@ -251,6 +251,10 @@ export function feishuEditorExtension(
 					return this.moveMenu(1);
 				case 'ArrowUp':
 					return this.moveMenu(-1);
+				case 'ArrowRight':
+					return this.moveMenuWithinRow(1);
+				case 'ArrowLeft':
+					return this.moveMenuWithinRow(-1);
 				case 'Enter':
 					return this.confirmMenu();
 				case 'Escape':
@@ -260,6 +264,18 @@ export function feishuEditorExtension(
 				default:
 					return false;
 			}
+		}
+
+		/**
+		 * Left/right walk the icon grid of the "+" panel; in a list they stay
+		 * with the text caret, which is also what edits a slash query.
+		 */
+		private moveMenuWithinRow(delta: number): boolean {
+			if (this.menuKind !== 'block' || !this.popup.usesIconGrid) {
+				return false;
+			}
+			this.popup.moveSelection(delta);
+			return true;
 		}
 
 		/** A slash typed at a plausible block position opens the menu. */
@@ -398,7 +414,19 @@ export function feishuEditorExtension(
 				this.closeMenu();
 				return;
 			}
-			this.showMenu('slash', sections);
+			this.showMenu('slash', sections, 'list', {
+				// Feishu's slash menu opens with the keyword field reading
+				// "/输入关键词"; the "+" panel has no field and leads with an
+				// icon grid instead, which is what tells the two apart.
+				search: {
+					value: `/${query}`,
+					hint:
+						query === ''
+							? pick('Type a keyword', '输入关键词')
+							: undefined,
+				},
+				ariaLabel: pick('Block menu', '块菜单'),
+			});
 		}
 
 		private buildSlashSections(
@@ -406,40 +434,51 @@ export function feishuEditorExtension(
 			query: string,
 		): PopupSection[] {
 			const q = query.trim().toLowerCase();
-			const matches = (command: BlockCommand): boolean =>
-				q === '' ||
-				command.label.toLowerCase().includes(q) ||
-				command.id.includes(q) ||
-				command.keywords.some((keyword) => keyword.includes(q));
-
+			// The line the slash was typed on decides which entry is the one
+			// the caret is already in.
+			const current = activeBlockId(
+				this.view.state.doc.lineAt(trigger).text,
+			);
 			// While filtering, drop the headings and show one flat list, the way
 			// a search result reads better than a half-empty outline.
 			if (q !== '') {
-				return [
-					{
-						items: BLOCK_COMMANDS.filter(matches).map((command) =>
-							this.buildSlashItem(trigger, command),
-						),
-					},
-				];
+				const matches = BLOCK_COMMANDS.filter((command) =>
+					commandMatches(command, q),
+				).map((command) => this.buildSlashItem(trigger, command, current));
+				return matches.length === 0 ? [] : [{ items: matches }];
 			}
+			return this.typeSections((command) =>
+				this.buildSlashItem(trigger, command, current),
+			);
+		}
+
+		/**
+		 * Labelled block list, shared by the slash menu and the selection
+		 * toolbar's "Turn into" entry: every block, grouped and named.
+		 */
+		private typeSections(
+			buildItem: (command: BlockCommand) => PopupItem,
+		): PopupSection[] {
 			return blockSections().map((section) => ({
-				title: section.title,
-				layout: section.layout,
-				items: section.commands.map((command) =>
-					this.buildSlashItem(trigger, command),
-				),
+				title: sectionTitle(section),
+				layout: 'list',
+				items: section.commands.map((command) => buildItem(command)),
 			}));
 		}
 
-		private buildSlashItem(trigger: number, command: BlockCommand): PopupItem {
+		private buildSlashItem(
+			trigger: number,
+			command: BlockCommand,
+			current: string,
+		): PopupItem {
 			return {
 				id: command.id,
-				label: command.label,
+				label: commandLabel(command),
 				icon: command.icon,
-				description: command.description,
+				description: commandDescription(command),
 				shortcut: command.shortcut,
 				accent: command.accent,
+				active: command.id === current,
 				onSelect: () => {
 					// Re-read the trigger: the menu may have been rebuilt after
 					// the document changed underneath it.
@@ -449,19 +488,6 @@ export function feishuEditorExtension(
 					applyBlockAtTrigger(this.view, current ?? trigger, command);
 				},
 			};
-		}
-
-		private filterCommands(query: string): BlockCommand[] {
-			const q = query.trim().toLowerCase();
-			if (q === '') {
-				return BLOCK_COMMANDS;
-			}
-			return BLOCK_COMMANDS.filter(
-				(command) =>
-					command.label.toLowerCase().includes(q) ||
-					command.id.includes(q) ||
-					command.keywords.some((keyword) => keyword.includes(q)),
-			);
 		}
 
 		/**
@@ -550,13 +576,13 @@ export function feishuEditorExtension(
 				cls: 'fse-block-handle',
 				attr: {
 					type: 'button',
-					'aria-label': 'Add block below',
-					title: 'Add block',
+					'aria-label': pick('Add block', '添加块'),
+					title: pick('Add block', '添加块'),
 					'aria-haspopup': 'true',
 					'data-fse-owner': String(this.instanceId),
 				},
 			});
-			handle.setText('+');
+			setIcon(handle, 'plus');
 			handle.addEventListener('mousedown', (evt) => evt.preventDefault());
 			handle.addEventListener('click', (evt) => {
 				evt.preventDefault();
@@ -593,19 +619,25 @@ export function feishuEditorExtension(
 		}
 
 		/**
-		 * Removes handles left behind by an instance that never got destroyed,
-		 * so a reload can never leave a user with several stacked handles.
+		 * One editor owns the plugin UI at a time, so any handle that is not
+		 * this instance's is either hidden (another live editor, which will
+		 * show its own again when it takes over) or dropped (an instance that
+		 * never got its `destroy()`, e.g. a plugin reload).
 		 */
 		private sweepHandles(): void {
 			const handles = this.doc.body.querySelectorAll<HTMLElement>(
 				'.fse-block-handle',
 			);
 			for (const el of Array.from(handles)) {
-				const owner = Number(el.getAttribute('data-fse-owner'));
-				if (el === this.handleEl || liveInstanceIds.has(owner)) {
+				if (el === this.handleEl) {
 					continue;
 				}
-				el.remove();
+				const owner = Number(el.getAttribute('data-fse-owner'));
+				if (liveInstanceIds.has(owner)) {
+					el.hide();
+				} else {
+					el.remove();
+				}
 			}
 		}
 
@@ -650,7 +682,7 @@ export function feishuEditorExtension(
 			// marks, then the block-level marks.
 			const asItem = (action: (typeof INLINE_ACTIONS)[number]): PopupItem => ({
 				id: action.id,
-				label: action.label,
+				label: pick(action.label, action.labelZh),
 				icon: action.icon,
 				shortcut: action.shortcut,
 				onSelect: () => {
@@ -666,11 +698,11 @@ export function feishuEditorExtension(
 					items: [
 						{
 							id: 'convert-block',
-							label: 'Turn into',
+							label: pick('Turn into', '转换为'),
 							icon: 'text-cursor-input',
 							hasSubmenu: true,
 							onSelect: () => {
-								this.openBlockMenu(
+								this.openConvertMenu(
 									this.view.state.doc.lineAt(selection.from).number,
 								);
 							},
@@ -691,7 +723,7 @@ export function feishuEditorExtension(
 				},
 			];
 			if (this.menuKind === 'bubble') {
-				this.popup.setContent(sections, 'toolbar');
+				this.popup.setContent(sections, 'toolbar', this.popupOptions());
 				this.popup.show();
 				this.schedulePlacementWhenMeasured(() => this.placeMenu());
 				return;
@@ -704,15 +736,17 @@ export function feishuEditorExtension(
 		private buildBlockItem(
 			command: BlockCommand,
 			lineNumber: number,
+			current: string,
 		): PopupItem {
 			return {
 				id: command.id,
-				label: command.label,
+				label: commandLabel(command),
 				icon: command.icon,
-				description: command.description,
+				description: commandDescription(command),
 				shortcut: command.shortcut,
 				hasSubmenu: command.hasSubmenu,
 				accent: command.accent,
+				active: command.id === current,
 				onSelect: () => {
 					if (command.id === 'callout') {
 						this.openCalloutMenu(lineNumber);
@@ -732,50 +766,84 @@ export function feishuEditorExtension(
 			);
 			const items: PopupItem[] = CALLOUT_KINDS.map((kind) => ({
 				id: `callout-${kind.type}`,
-				label: kind.label,
+				label: pick(kind.label, kind.labelZh),
 				icon: kind.icon,
 				accent: kind.accent,
 				onSelect: () => {
 					this.closeMenu();
 					this.suppressBubbleOnce = true;
-					applyBlockAtLine(this.view, line.from, {
-						...CALLOUT_COMMAND,
-						build: () => ({
-							text: `> [!${kind.type}] `,
-							cursor: kind.type.length + 5,
-						}),
-					});
+					applyBlockAtLine(
+						this.view,
+						line.from,
+						calloutCommand(kind.type),
+					);
 				},
 			}));
 			this.menuAnchor = line.from;
 			this.menuLine = line.number;
-			this.showMenu('block', [{ items }]);
+			this.showMenu('block', [{ items }], 'list', {
+				ariaLabel: pick('Callout type', '提示块类型'),
+			});
 		}
 
+		/**
+		 * The "+" panel: Feishu's insert palette. The basic blocks come as an
+		 * icon-only grid, the rest as labelled rows with their own colours.
+		 */
 		private openBlockMenu(lineNumber: number): void {
-			const sections: PopupSection[] = blockSections().map((section) => ({
-				title: section.title,
-				layout: section.layout,
-				items: section.commands.map((command) =>
-					this.buildBlockItem(command, lineNumber),
-				),
-			}));
 			const anchorLine = this.view.state.doc.line(
 				Math.min(Math.max(lineNumber, 1), this.view.state.doc.lines),
 			);
+			const current = activeBlockId(anchorLine.text);
+			const sections: PopupSection[] = blockSections().map((section) => ({
+				title: sectionTitle(section),
+				layout: section.layout,
+				items: section.commands
+					.filter(
+						(command) =>
+							section.layout !== 'icons' || command.tile === true,
+					)
+					.map((command) =>
+						this.buildBlockItem(command, lineNumber, current),
+					),
+			}));
 			this.menuAnchor = anchorLine.from;
 			this.menuLine = anchorLine.number;
-			this.showMenu('block', sections);
+			this.showMenu('block', sections, 'list', {
+				ariaLabel: pick('Insert block', '插入块'),
+			});
+		}
+
+		/**
+		 * What the selection toolbar's "Turn into" opens: the same block list
+		 * the slash menu shows, minus the keyword field.
+		 */
+		private openConvertMenu(lineNumber: number): void {
+			const anchorLine = this.view.state.doc.line(
+				Math.min(Math.max(lineNumber, 1), this.view.state.doc.lines),
+			);
+			const current = activeBlockId(anchorLine.text);
+			this.menuAnchor = anchorLine.from;
+			this.menuLine = anchorLine.number;
+			this.showMenu(
+				'convert',
+				this.typeSections((command) =>
+					this.buildBlockItem(command, anchorLine.number, current),
+				),
+				'list',
+				{ ariaLabel: pick('Turn into', '转换为') },
+			);
 		}
 
 		private showMenu(
 			kind: MenuKind,
 			sections: PopupSection[],
 			mode: 'list' | 'toolbar' = 'list',
+			options: PopupOptions = {},
 		): void {
 			this.takeOverUi();
 			this.menuKind = kind;
-			this.popup.setContent(sections, mode);
+			this.popup.setContent(sections, mode, this.popupOptions(options));
 			// Reveal before measuring: a hidden element reports a zero height,
 			// which would misplace a menu that has to fit above its anchor.
 			this.popup.show();
@@ -783,6 +851,14 @@ export function feishuEditorExtension(
 			// laid out yet (the character just typed, a fresh selection), so
 			// coordinates are read on a measure pass with fallbacks.
 			this.schedulePlacementWhenMeasured(() => this.placeMenu());
+		}
+
+		/**
+		 * Options the shared popup needs: the icon palette from the user's
+		 * settings, plus whatever the menu kind adds on top.
+		 */
+		private popupOptions(extra: PopupOptions = {}): PopupOptions {
+			return { coloredIcons: this.settings.coloredIcons, ...extra };
 		}
 
 		/** Places the open menu once layout can be read. */

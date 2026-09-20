@@ -1,29 +1,96 @@
 /* Feishu Style Editor
  *
  * Visual language borrowed from Feishu's editor:
- *   - a block palette with a compact icon grid for basic blocks and
- *     descriptive rows for the rest, under quiet section headings;
- *   - a segmented floating toolbar: block converter | alignment-free
- *     formatting | inline marks, separated by hairlines.
- * Everything derives from Obsidian's theme variables so it follows the
- * user's light/dark theme and accent colour.
+ *   - the slash menu opens with a keyword field and a labelled list of
+ *     blocks; the "+" panel has no field and leads with an icon-only grid,
+ *     which is what tells the two apart at a glance;
+ *   - a segmented floating toolbar: block converter | inline marks,
+ *     separated by the same hairlines.
+ *
+ * Colour is Feishu's: near-black text (#1f2329), #dee0e3 hairlines, blue
+ * (#3370ff) for the block the caret sits in, and Feishu's semantic hues for
+ * the icons — blue for text and lists, green for code and tables, orange for
+ * the divider and highlight blocks, purple for maths. Every value is a
+ * `--fse-*` token so a theme or a CSS snippet can retint the whole UI in one
+ * place.
  */
+
+body {
+	/* Surfaces */
+	--fse-surface: #ffffff;
+	--fse-border: #dee0e3;
+	--fse-hover: #f2f3f5;
+	--fse-selected: #e1eaff;
+	--fse-shadow-menu:
+		0 4px 12px rgba(31, 35, 41, 0.1), 0 0 1px rgba(31, 35, 41, 0.14);
+	--fse-shadow-toolbar:
+		0 2px 8px rgba(31, 35, 41, 0.08), 0 6px 18px rgba(31, 35, 41, 0.1);
+
+	/* Text and icons */
+	--fse-text: #1f2329;
+	--fse-text-secondary: #646a73;
+	--fse-text-tertiary: #8f959e;
+	--fse-icon: #1f2329;
+
+	/* Semantic colours */
+	--fse-accent: #3370ff;
+	--fse-highlight: #fdf8a3;
+
+	/* Block accents: the hues Feishu gives its own block icons */
+	--fse-blue: #3370ff;
+	--fse-purple: #7f3bf5;
+	--fse-green: #34c724;
+	--fse-orange: #ff8800;
+	--fse-red: #f54a45;
+	--fse-yellow: #e8a600;
+	--fse-cyan: #14c0d8;
+
+	/* Shape */
+	--fse-radius-menu: 8px;
+	--fse-radius-item: 6px;
+}
+
+body.theme-dark {
+	--fse-surface: #2b2b2b;
+	--fse-border: #3d3d3d;
+	--fse-hover: #383838;
+	--fse-selected: #2c3c5e;
+	--fse-shadow-menu: 0 6px 18px rgba(0, 0, 0, 0.45);
+	--fse-shadow-toolbar: 0 4px 14px rgba(0, 0, 0, 0.4);
+
+	--fse-text: #ebebeb;
+	--fse-text-secondary: #a6a6a6;
+	--fse-text-tertiary: #8f959e;
+	--fse-icon: #ebebeb;
+
+	--fse-accent: #4c88ff;
+	--fse-highlight: #6b5c22;
+
+	--fse-blue: #4c88ff;
+	--fse-purple: #9a6bff;
+	--fse-green: #4ecb3a;
+	--fse-orange: #ff9a2e;
+	--fse-red: #f76965;
+	--fse-yellow: #ffc60a;
+	--fse-cyan: #2fd0e8;
+}
 
 /* ---------- block palette / menu shell ---------- */
 
 .fse-popup {
 	position: fixed;
 	z-index: var(--layer-menu);
-	min-width: 232px;
-	max-width: 324px;
+	min-width: 268px;
+	max-width: 340px;
 	max-height: 340px;
 	overflow-y: auto;
 	overscroll-behavior: contain;
 	padding: var(--size-4-2) var(--size-4-1) var(--size-4-1);
-	background: var(--background-primary);
-	border: 1px solid var(--background-modifier-border);
-	border-radius: var(--radius-l);
-	box-shadow: var(--shadow-l);
+	background: var(--fse-surface);
+	border: 1px solid var(--fse-border);
+	border-radius: var(--fse-radius-menu);
+	box-shadow: var(--fse-shadow-menu);
+	color: var(--fse-text);
 }
 
 .fse-popup-list {
@@ -32,13 +99,50 @@
 	padding: 0;
 }
 
+/* Feishu's slash menu leads with the query itself — the trigger slash plus
+ * whatever has been typed after it — and the "+" panel has no such row at
+ * all. The row stays put while the list under it scrolls. */
+.fse-popup-search {
+	position: sticky;
+	top: 0;
+	z-index: 1;
+	display: flex;
+	align-items: baseline;
+	flex-wrap: wrap;
+	margin: calc(var(--size-4-2) * -1) calc(var(--size-4-1) * -1)
+		var(--size-4-1);
+	padding: var(--size-4-2) var(--size-4-3) var(--size-4-2);
+	border-bottom: 1px solid var(--fse-border);
+	border-radius: var(--fse-radius-menu) var(--fse-radius-menu) 0 0;
+	background: var(--fse-surface);
+	color: var(--fse-text);
+	font-size: var(--font-ui-medium);
+	line-height: 1.4;
+}
+
+.fse-popup-search-text {
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+}
+
+.fse-popup-search-hint {
+	color: var(--fse-text-tertiary);
+}
+
+.fse-popup-search-hint.is-hidden {
+	display: none;
+}
+
+/* Feishu separates its groups with a hairline that runs to the menu edge. */
 .fse-popup-section + .fse-popup-section {
-	margin-top: var(--size-4-2);
+	margin: var(--size-4-2) calc(var(--size-4-1) * -1) 0;
+	padding: var(--size-4-2) var(--size-4-1) 0;
+	border-top: 1px solid var(--fse-border);
 }
 
 .fse-popup-section-title {
 	padding: var(--size-4-1) var(--size-4-2) var(--size-2-1);
-	color: var(--text-faint);
+	color: var(--fse-text-tertiary);
 	font-size: var(--font-ui-smaller);
 	font-weight: var(--font-medium);
 	letter-spacing: 0.02em;
@@ -49,9 +153,10 @@
 	gap: 2px;
 }
 
-/* Feishu's basic palette: two columns of compact icon tiles. */
-.fse-popup-group-grid {
-	grid-template-columns: repeat(2, minmax(0, 1fr));
+/* Feishu's basic palette: one row of icon-only tiles per block family. */
+.fse-popup-group-icons {
+	grid-template-columns: repeat(6, minmax(0, 1fr));
+	gap: var(--size-2-1);
 }
 
 .fse-popup-group-list {
@@ -64,7 +169,11 @@
 	min-width: 0;
 }
 
-.fse-popup-item-button {
+/* Obsidian styles every `button:not(.clickable-icon)` with --interactive-normal
+ * and an input shadow. That selector weighs (0,1,1), so a bare plugin class
+ * loses and every row would come out as a grey chip; the plugin's own buttons
+ * are therefore addressed one class deeper than Obsidian's rule. */
+.fse-popup .fse-popup-item-button {
 	display: flex;
 	align-items: center;
 	gap: var(--size-4-2);
@@ -72,25 +181,38 @@
 	min-height: 36px;
 	padding: var(--size-2-2) var(--size-4-2);
 	border: none;
-	border-radius: var(--radius-s);
-	background: transparent;
-	color: var(--text-normal);
+	border-radius: var(--fse-radius-item);
+	background-color: transparent;
+	box-shadow: none;
+	color: var(--fse-text);
 	cursor: pointer;
 	text-align: left;
 	min-width: 0;
 }
 
-.fse-popup-item-button.is-tile {
+.fse-popup .fse-popup-item-button.is-icon {
+	justify-content: center;
 	min-height: 34px;
+	padding: 0;
 }
 
-.fse-popup-item-button:hover,
-.fse-popup-item-button.is-active {
-	background: var(--background-modifier-hover);
+.fse-popup .fse-popup-item-button:hover,
+.fse-popup .fse-popup-item-button.is-active {
+	background-color: var(--fse-hover);
 }
 
-.fse-popup-item-button:focus-visible {
-	box-shadow: inset 0 0 0 2px var(--interactive-accent);
+/* The block the caret is in carries Feishu's blue chip on its icon. */
+.fse-popup .fse-popup-item-button.is-current .fse-popup-item-label {
+	color: var(--fse-accent);
+}
+
+.fse-popup .fse-popup-item-button.is-current .fse-popup-item-tile {
+	background-color: var(--fse-selected);
+	color: var(--fse-accent);
+}
+
+.fse-popup .fse-popup-item-button:focus-visible {
+	box-shadow: inset 0 0 0 2px var(--fse-accent);
 	outline: none;
 }
 
@@ -109,18 +231,12 @@
 	white-space: nowrap;
 }
 
-.fse-popup-item-desc {
-	font-size: var(--font-ui-smaller);
-	color: var(--text-faint);
-	overflow: hidden;
-	text-overflow: ellipsis;
-	white-space: nowrap;
-}
-
 .fse-popup-item-shortcut {
 	margin-left: auto;
 	padding-left: var(--size-4-2);
-	color: var(--text-faint);
+	color: var(--fse-text-tertiary);
+	/* Monospace keeps a fence (```) from reading as an ellipsis. */
+	font-family: var(--font-monospace);
 	font-size: var(--font-ui-smaller);
 	font-variant-numeric: tabular-nums;
 }
@@ -128,7 +244,7 @@
 .fse-popup-item-chevron {
 	display: flex;
 	align-items: center;
-	color: var(--text-faint);
+	color: var(--fse-text-tertiary);
 	flex-shrink: 0;
 }
 
@@ -137,50 +253,82 @@
 	height: 14px;
 }
 
-/* ---------- coloured icon tiles ---------- */
+/* ---------- icon tiles ---------- */
 
 .fse-popup-item-tile {
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
 	flex-shrink: 0;
-	width: 22px;
-	height: 22px;
+	width: 24px;
+	height: 24px;
 	border-radius: var(--radius-s);
-	color: var(--text-muted);
+	color: var(--fse-icon);
 }
 
 .fse-popup-item-tile svg {
-	width: 16px;
-	height: 16px;
+	width: 18px;
+	height: 18px;
 }
 
-.fse-popup-item-tile[data-accent='blue'] {
-	color: #3370ff;
+.fse-popup-item-button.is-icon .fse-popup-item-tile svg {
+	width: 20px;
+	height: 20px;
 }
 
-.fse-popup-item-tile[data-accent='purple'] {
-	color: #7f3bf5;
+/* Feishu draws the labelled rows in colour — blue for text and lists, green
+ * for code and tables, orange for the divider, purple for maths — while the
+ * "+" panel's basic grid above them stays black. The tiles stay flat: the hue
+ * lives in the glyph, not in a background chip. */
+.fse-icons-colored
+	.fse-popup-item-button:not(.is-icon)
+	.fse-popup-item-tile[data-accent='blue'] {
+	color: var(--fse-blue);
 }
 
-.fse-popup-item-tile[data-accent='green'] {
-	color: #34c724;
+.fse-icons-colored
+	.fse-popup-item-button:not(.is-icon)
+	.fse-popup-item-tile[data-accent='purple'] {
+	color: var(--fse-purple);
 }
 
-.fse-popup-item-tile[data-accent='orange'] {
-	color: #ff8800;
+.fse-icons-colored
+	.fse-popup-item-button:not(.is-icon)
+	.fse-popup-item-tile[data-accent='green'] {
+	color: var(--fse-green);
 }
 
-.fse-popup-item-tile[data-accent='red'] {
-	color: #f54a45;
+.fse-icons-colored
+	.fse-popup-item-button:not(.is-icon)
+	.fse-popup-item-tile[data-accent='orange'] {
+	color: var(--fse-orange);
 }
 
-.fse-popup-item-tile[data-accent='yellow'] {
-	color: #e8a600;
+.fse-icons-colored
+	.fse-popup-item-button:not(.is-icon)
+	.fse-popup-item-tile[data-accent='red'] {
+	color: var(--fse-red);
 }
 
-.fse-popup-item-tile[data-accent='cyan'] {
-	color: #14c0d8;
+.fse-icons-colored
+	.fse-popup-item-button:not(.is-icon)
+	.fse-popup-item-tile[data-accent='yellow'] {
+	color: var(--fse-yellow);
+}
+
+.fse-icons-colored
+	.fse-popup-item-button:not(.is-icon)
+	.fse-popup-item-tile[data-accent='cyan'] {
+	color: var(--fse-cyan);
+}
+
+/* The entry the caret already sits in keeps Feishu's blue chip, whatever
+ * colour its kind carries. */
+.fse-icons-colored
+	.fse-popup-item-button.is-current
+	.fse-popup-item-tile[data-accent] {
+	background-color: var(--fse-selected);
+	color: var(--fse-accent);
 }
 
 /* ---------- segmented floating toolbar ---------- */
@@ -192,7 +340,8 @@
 	max-width: none;
 	max-height: none;
 	padding: var(--size-2-2);
-	border-radius: var(--radius-l);
+	border-radius: var(--fse-radius-menu);
+	box-shadow: var(--fse-shadow-toolbar);
 	overflow: visible;
 }
 
@@ -212,7 +361,7 @@
 .fse-popup-toolbar .fse-popup-group-row[data-divider] {
 	margin-left: var(--size-2-2);
 	padding-left: var(--size-2-2);
-	border-left: 1px solid var(--background-modifier-border);
+	border-left: 1px solid var(--fse-border);
 }
 
 .fse-popup-toolbar .fse-popup-item {
@@ -225,17 +374,18 @@
 	height: 30px;
 	min-height: 0;
 	padding: 0;
-	border-radius: var(--radius-s);
-	color: var(--text-muted);
+	border-radius: var(--fse-radius-item);
+	color: var(--fse-icon);
 }
 
 .fse-popup-toolbar .fse-popup-item-button:hover,
 .fse-popup-toolbar .fse-popup-item-button.is-active {
-	color: var(--text-normal);
-	background: var(--background-modifier-hover);
+	color: var(--fse-text);
+	background: var(--fse-hover);
 }
 
 .fse-popup-toolbar .fse-popup-item-tile {
+	position: relative;
 	width: auto;
 	height: auto;
 	color: inherit;
@@ -246,9 +396,27 @@
 	height: 17px;
 }
 
+/* The highlighter keeps its own colour, the way Feishu shows the active
+ * text colour under the "A" of its toolbar. */
+.fse-popup-toolbar
+	.fse-popup-item-button[data-item-id='highlight']
+	.fse-popup-item-tile::after {
+	content: '';
+	position: absolute;
+	left: 0;
+	right: 0;
+	bottom: -3px;
+	height: 2px;
+	border-radius: 1px;
+	background: var(--fse-highlight);
+}
+
 /* ---------- block handle ---------- */
 
-.fse-block-handle {
+/* Same fight as the palette rows: the handle carries `data-fse-owner` (the
+ * marker that lets a reloaded plugin sweep stale handles away), and that
+ * attribute is what lifts these rules above Obsidian's own button styling. */
+.fse-block-handle[data-fse-owner] {
 	position: fixed;
 	z-index: var(--layer-menu);
 	display: flex;
@@ -258,27 +426,31 @@
 	height: 26px;
 	padding: 0;
 	border: none;
-	border-radius: var(--radius-s);
-	background: transparent;
-	color: var(--text-faint);
-	font-size: 18px;
-	line-height: 1;
+	border-radius: var(--fse-radius-item);
+	background-color: transparent;
+	box-shadow: none;
+	color: var(--fse-text-secondary);
 	cursor: pointer;
 }
 
+.fse-block-handle[data-fse-owner] svg {
+	width: 17px;
+	height: 17px;
+}
+
 /* Extend the touch target without enlarging the visual button. */
-.fse-block-handle::after {
+.fse-block-handle[data-fse-owner]::after {
 	content: '';
 	position: absolute;
 	inset: -9px;
 }
 
-.fse-block-handle:hover {
-	background: var(--background-modifier-hover);
-	color: var(--text-normal);
+.fse-block-handle[data-fse-owner]:hover {
+	background-color: var(--fse-hover);
+	color: var(--fse-text);
 }
 
-.fse-block-handle:focus-visible {
-	box-shadow: 0 0 0 2px var(--interactive-accent);
+.fse-block-handle[data-fse-owner]:focus-visible {
+	box-shadow: 0 0 0 2px var(--fse-accent);
 	outline: none;
 }
